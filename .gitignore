@@ -3,3 +3,7 @@
 venv/
 __pycache__/
 *.pyc
+
+.tmp_docx2/
+
+yapılacaklar.docx

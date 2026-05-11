@@ -3,22 +3,9 @@ import pandas as pd
 from mcp.server.fastmcp import FastMCP
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
-import os
-from dotenv import load_dotenv
+from config import DB_CONFIG
 
 mcp = FastMCP("Telecom_AI_Agent")
-
-
-
-load_dotenv()
-
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": int(os.getenv("DB_PORT", "5432")),
-    "dbname": os.getenv("DB_NAME", "network_mcp"),
-    "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", ""),
-}
 
 
 

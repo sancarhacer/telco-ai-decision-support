@@ -30,6 +30,7 @@ import psycopg2
 import psycopg2.extras
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
+from config import DB_CONFIG
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,14 +40,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Veritabanı bağlantı ayarları ──────────────────────────────────────────
-DB_CONFIG = {
-    "host":     "localhost",
-    "port":     5432,
-    "dbname":   "network_mcp",   # kendi DB adınla değiştir
-    "user":     "postgres",     # kendi kullanıcınla değiştir
-    "password": "123456",     # kendi şifrenle değiştir
-}
-
 # ── Model parametreleri ────────────────────────────────────────────────────
 IF_CONTAMINATION  = 0.05   # Isolation Forest: verinin ~%5'i anomali bekleniyor
 IF_N_ESTIMATORS   = 100    # ağaç sayısı
@@ -508,3 +501,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     run(mode=args.mode, region=args.region, hours=args.hours)
+

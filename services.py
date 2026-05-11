@@ -5,17 +5,8 @@ from typing import Any
 
 import psycopg2
 import psycopg2.extras
-from dotenv import load_dotenv
+from config import DB_CONFIG
 
-load_dotenv()
-
-DB_CONFIG = {
-    "dbname": os.getenv("DB_NAME", "network_mcp"),
-    "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", ""),
-    "host": os.getenv("DB_HOST", "localhost"),
-    "port": int(os.getenv("DB_PORT", "5432")),
-}
 
 KNOWN_REGIONS = [
     "Bornova",
