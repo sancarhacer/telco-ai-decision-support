@@ -1,8 +1,12 @@
 from typing import Any
+from contextlib import asynccontextmanager
+import logging
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from jobs import job_generate_mock_data, job_run_anomaly_detection
 
 from services import (
     build_answer,
@@ -20,7 +24,40 @@ from services import (
     route_chat,
 )
 
-app = FastAPI(title="Telecom NOC API", version="1.1.0")
+log = logging.getLogger(__name__)
+scheduler = BackgroundScheduler(timezone="Europe/Istanbul")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if not scheduler.running:
+        scheduler.add_job(
+            job_generate_mock_data,
+            trigger="interval",
+            seconds=30,
+            id="mock_data_job",
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            job_run_anomaly_detection,
+            trigger="interval",
+            seconds=120,
+            id="anomaly_job",
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.start()
+        log.info("Scheduler started with mock=30s and anomaly=120s intervals.")
+    try:
+        yield
+    finally:
+        if scheduler.running:
+            scheduler.shutdown(wait=False)
+            log.info("Scheduler stopped.")
+
+
+app = FastAPI(title="Telecom NOC API", version="1.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

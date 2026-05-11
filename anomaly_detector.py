@@ -434,14 +434,14 @@ def run(mode="full", region=None, hours=None):
     log.info(f"  Combined anomali: {anomaly_count_cb:,} / {len(df_combined):,}")
 
     # 6. Enrich (severity + root_cause)
-    records_if  = enrich_results(df_if)
-    records_zs  = enrich_results(df_zs)
+    # records_if  = enrich_results(df_if)
+    # records_zs  = enrich_results(df_zs)
     records_cb  = enrich_results(df_combined)
 
     # 7. DB'ye yaz
     log.info("Veritabanına yazılıyor...")
-    insert_results(conn, records_if)
-    insert_results(conn, records_zs)
+    # insert_results(conn, records_if)
+    # insert_results(conn, records_zs)
     insert_results(conn, records_cb)
 
     conn.close()

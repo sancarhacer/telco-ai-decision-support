@@ -7,3 +7,4 @@ __pycache__/
 .tmp_docx2/
 
 yapılacaklar.docx
+.simulation_state.json
