@@ -450,6 +450,16 @@ def run(mode="full", region=None, hours=None):
     print_summary(df_combined)
 
 
+
+def run_incremental(hours: int = 1, region: str | None = None):
+    """Service-friendly incremental anomaly run for scheduler/jobs."""
+    return run(mode="incremental", region=region, hours=hours)
+
+
+def run_full(region: str | None = None):
+    """Service-friendly full anomaly run for manual/bootstrap usage."""
+    return run(mode="full", region=region, hours=None)
+
 def print_summary(df: pd.DataFrame):
     anomalies = df[df["is_anomaly"] == True]
     print("\n" + "═" * 60)

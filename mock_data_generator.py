@@ -18,9 +18,9 @@ log = logging.getLogger(__name__)
 STATE_FILE = Path(".simulation_state.json")
 INCIDENT_TYPES = ("CONGESTION", "FIBER_CUT", "RADIO_ISSUE", "SLICE_BOTTLENECK")
 TICK_SECONDS = 30
-INCIDENT_DURATION_TICKS = 30  # 15 minutes
-COMPLAINT_START_TICKS = 14    # ~7 minutes
-FAULT_CREATE_TICKS = 20       # ~10 minutes
+INCIDENT_DURATION_TICKS = 15  # 15 minutes
+COMPLAINT_START_TICKS = 7    # ~7 minutes
+FAULT_CREATE_TICKS = 10       # ~10 minutes
 COMPLAINT_MESSAGES = {
     "connection_drop": [
         "Baglantim surekli kopuyor.",
@@ -243,6 +243,28 @@ def generate_cell_metric(cell: dict[str, Any], baseline: dict[str, float], incid
 
 
 def insert_network_metrics_batch(conn, metrics: list[dict[str, Any]], recorded_at: datetime) -> int:
+    if not metrics:
+        return 0
+
+    # Duplicate-safe precheck by (cell_id, recorded_at)
+    cell_ids = [m["cell_id"] for m in metrics]
+    existing_cell_ids: set[str] = set()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT cell_id
+            FROM network_metrics
+            WHERE recorded_at = %s
+              AND cell_id = ANY(%s)
+            """,
+            (recorded_at, cell_ids),
+        )
+        existing_cell_ids = {r[0] for r in cur.fetchall()}
+
+    filtered_metrics = [m for m in metrics if m["cell_id"] not in existing_cell_ids]
+    if not filtered_metrics:
+        return 0
+
     rows = [
         (
             m["cell_id"],
@@ -256,7 +278,7 @@ def insert_network_metrics_batch(conn, metrics: list[dict[str, Any]], recorded_a
             round(m["load_pct"], 2),
             recorded_at,
         )
-        for m in metrics
+        for m in filtered_metrics
     ]
     with conn.cursor() as cur:
         cur.executemany(
@@ -265,10 +287,64 @@ def insert_network_metrics_batch(conn, metrics: list[dict[str, Any]], recorded_a
             (cell_id, slice_type, rsrp_dbm, rsrq_db, throughput_mbps, latency_ms,
              packet_loss_pct, connected_users, load_pct, recorded_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (cell_id, recorded_at) DO NOTHING
             """,
             rows,
         )
     return len(rows)
+
+
+def generate_metrics_batch(
+    now: datetime,
+    state: dict[str, Any],
+    grouped_cells: dict[str, list[dict[str, Any]]],
+    active_incidents: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    metrics: list[dict[str, Any]] = []
+    incident_metrics_map: dict[str, list[dict[str, Any]]] = {}
+
+    for region, cells in grouped_cells.items():
+        baseline = generate_region_baseline(region, state["tick"], now)
+        incident = _incident_for_region(active_incidents, region)
+        for cell in cells:
+            metric = generate_cell_metric(cell, baseline, incident)
+            metrics.append(metric)
+            if incident:
+                incident_metrics_map.setdefault(incident["incident_id"], []).append(metric)
+
+    return metrics, incident_metrics_map
+
+
+def generate_faults_complaints_batch(
+    conn,
+    state: dict[str, Any],
+    active_incidents: list[dict[str, Any]],
+    resolved_incidents: list[dict[str, Any]],
+    incident_metrics_map: dict[str, list[dict[str, Any]]],
+) -> None:
+    for inc in active_incidents:
+        incident_age = state["tick"] - inc["started_tick"]
+        if (
+            inc.get("fault_id") is None
+            and incident_age >= FAULT_CREATE_TICKS
+            and _has_serious_anomaly_for_region(conn, inc["region"])
+        ):
+            fault_id = create_fault_if_needed(conn, inc)
+            if fault_id:
+                inc["fault_id"] = fault_id
+        region_metrics = incident_metrics_map.get(inc["incident_id"], [])
+        if region_metrics:
+            created = create_complaints_if_needed(conn, inc, region_metrics, state["tick"])
+            if created:
+                log.info(
+                    "Complaints created for %s: %s",
+                    inc["incident_id"],
+                    created,
+                )
+
+    for inc in resolved_incidents:
+        resolve_incident_if_needed(conn, inc)
+        log.info("Incident resolved: %s", inc["incident_id"])
 
 
 def _table_columns(conn, table_name: str) -> set[str]:
@@ -477,44 +553,23 @@ def generate_mock_data_tick() -> int:
         maybe_start_incident(state, regions)
         active_incidents, resolved_incidents = update_active_incidents(state)
 
-        metrics: list[dict[str, Any]] = []
-        incident_metrics_map: dict[str, list[dict[str, Any]]] = {}
-
-        for region, cells in grouped.items():
-            baseline = generate_region_baseline(region, state["tick"], now)
-            incident = _incident_for_region(active_incidents, region)
-            for cell in cells:
-                metric = generate_cell_metric(cell, baseline, incident)
-                metrics.append(metric)
-                if incident:
-                    incident_metrics_map.setdefault(incident["incident_id"], []).append(metric)
+        metrics, incident_metrics_map = generate_metrics_batch(
+            now=now,
+            state=state,
+            grouped_cells=grouped,
+            active_incidents=active_incidents,
+        )
 
         inserted_count = insert_network_metrics_batch(conn, metrics, now)
         conn.commit()
 
-        for inc in active_incidents:
-            incident_age = state["tick"] - inc["started_tick"]
-            if (
-                inc.get("fault_id") is None
-                and incident_age >= FAULT_CREATE_TICKS
-                and _has_serious_anomaly_for_region(conn, inc["region"])
-            ):
-                fault_id = create_fault_if_needed(conn, inc)
-                if fault_id:
-                    inc["fault_id"] = fault_id
-            region_metrics = incident_metrics_map.get(inc["incident_id"], [])
-            if region_metrics:
-                created = create_complaints_if_needed(conn, inc, region_metrics, state["tick"])
-                if created:
-                    log.info(
-                        "Complaints created for %s: %s",
-                        inc["incident_id"],
-                        created,
-                    )
-
-        for inc in resolved_incidents:
-            resolve_incident_if_needed(conn, inc)
-            log.info("Incident resolved: %s", inc["incident_id"])
+        generate_faults_complaints_batch(
+            conn=conn,
+            state=state,
+            active_incidents=active_incidents,
+            resolved_incidents=resolved_incidents,
+            incident_metrics_map=incident_metrics_map,
+        )
 
         conn.commit()
 

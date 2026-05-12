@@ -1,6 +1,6 @@
 import logging
 
-from anomaly_detector import run as run_anomaly_detector
+from anomaly_detector import run_incremental
 from mock_data_generator import generate_mock_data_tick
 
 log = logging.getLogger(__name__)
@@ -12,5 +12,5 @@ def job_generate_mock_data() -> None:
 
 
 def job_run_anomaly_detection() -> None:
-    run_anomaly_detector(mode="incremental", hours=1)
+    run_incremental(hours=1)
     log.info("Anomaly detection tick finished.")
