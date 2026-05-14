@@ -5,7 +5,13 @@ from typing import Any
 
 import psycopg2
 import psycopg2.extras
-from config import DB_CONFIG
+from config import (
+    ASSURANCE_DB_CONFIG,
+    CRM_DB_CONFIG,
+    DB_CONFIG,
+    INVENTORY_DB_CONFIG,
+    TELEMETRY_DB_CONFIG,
+)
 
 
 KNOWN_REGIONS = [
@@ -60,6 +66,771 @@ def query_rows(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
                 return list(cur.fetchall())
     except Exception as e:
         raise RuntimeError(f"Veritabani Hatasi: {e}")
+
+
+DB_MAP: dict[str, dict[str, Any]] = {
+    "default": DB_CONFIG,
+    "telemetry": TELEMETRY_DB_CONFIG,
+    "assurance": ASSURANCE_DB_CONFIG,
+    "crm": CRM_DB_CONFIG,
+    "inventory": INVENTORY_DB_CONFIG,
+}
+
+
+def query_rows_on(db_key: str, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    cfg = DB_MAP.get(db_key, DB_CONFIG)
+    try:
+        with psycopg2.connect(**cfg) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, params)
+                return list(cur.fetchall())
+    except Exception as e:
+        raise RuntimeError(f"Veritabani Hatasi ({db_key}): {e}")
+
+
+def _inventory_cells_by_region(region: str) -> list[str]:
+    sql = """
+    SELECT cell_id
+    FROM base_stations
+    WHERE LOWER(region) = LOWER(%s)
+    """
+    rows = query_rows_on("inventory", sql, (region,))
+    return [str(r["cell_id"]) for r in rows]
+
+
+def _in_clause(values: list[Any]) -> tuple[str, tuple[Any, ...]]:
+    placeholders = ", ".join(["%s"] * len(values))
+    return f"({placeholders})", tuple(values)
+
+
+def _as_filter(value: Any) -> Any | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if cleaned == "" or cleaned.lower() == "all":
+            return None
+        return cleaned
+    return value
+
+
+def _resolve_cell_scope(cell_id: str | None, region: str | None) -> list[str] | None:
+    scoped_cell = _as_filter(cell_id)
+    scoped_region = _as_filter(region)
+    if scoped_cell:
+        return [str(scoped_cell)]
+    if scoped_region:
+        cells = _inventory_cells_by_region(str(scoped_region))
+        return cells if cells else []
+    return None
+
+
+def _parse_resolved_filter(resolved: str | bool | None) -> bool | None:
+    parsed = _as_filter(resolved)
+    if parsed is None:
+        return None
+    if isinstance(parsed, bool):
+        return parsed
+    lowered = str(parsed).lower()
+    if lowered in ("true", "1", "yes", "open_false"):
+        return True
+    if lowered in ("false", "0", "no", "open_true"):
+        return False
+    raise RuntimeError("resolved filtresi icin all|true|false kullanin.")
+
+
+def get_faults_atomic_service(
+    cell_id: str = "all",
+    region: str = "all",
+    severity: str = "all",
+    fault_type: str = "all",
+    resolved: str | bool = "all",
+    window_min: int = 60,
+    limit: int = 200,
+) -> dict[str, Any]:
+    where = ["created_at >= NOW() - make_interval(mins => %s)"]
+    params: list[Any] = [window_min]
+
+    cells = _resolve_cell_scope(cell_id, region)
+    if cells == []:
+        return {"filters": {"cell_id": cell_id, "region": region, "window_min": window_min, "limit": limit}, "count": 0, "items": []}
+    if cells:
+        in_sql, in_params = _in_clause(cells)
+        where.append(f"cell_id IN {in_sql}")
+        params.extend(in_params)
+
+    sev = _as_filter(severity)
+    if sev:
+        where.append("severity = %s")
+        params.append(sev)
+    f_type = _as_filter(fault_type)
+    if f_type:
+        where.append("fault_type = %s")
+        params.append(f_type)
+    resolved_bool = _parse_resolved_filter(resolved)
+    if resolved_bool is not None:
+        where.append("resolved = %s")
+        params.append(resolved_bool)
+
+    params.append(limit)
+    rows = query_rows_on(
+        "assurance",
+        f"""
+        SELECT id, cell_id, severity, fault_type, message, resolved, created_at, resolved_at
+        FROM faults
+        WHERE {' AND '.join(where)}
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        tuple(params),
+    )
+    return {
+        "filters": {
+            "cell_id": cell_id,
+            "region": region,
+            "severity": severity,
+            "fault_type": fault_type,
+            "resolved": resolved,
+            "window_min": window_min,
+            "limit": limit,
+        },
+        "count": len(rows),
+        "items": _serialize_rows(rows),
+    }
+
+
+def get_complaints_atomic_service(
+    cell_id: str = "all",
+    region: str = "all",
+    issue: str = "all",
+    window_min: int = 60,
+    limit: int = 200,
+) -> dict[str, Any]:
+    where = ["created_at >= NOW() - make_interval(mins => %s)"]
+    params: list[Any] = [window_min]
+
+    scoped_cell = _as_filter(cell_id)
+    if scoped_cell:
+        where.append("cell_id = %s")
+        params.append(scoped_cell)
+    scoped_region = _as_filter(region)
+    if scoped_region:
+        where.append("LOWER(region) = LOWER(%s)")
+        params.append(scoped_region)
+    scoped_issue = _as_filter(issue)
+    if scoped_issue:
+        where.append("issue ILIKE %s")
+        params.append(f"%{scoped_issue}%")
+
+    params.append(limit)
+    rows = query_rows_on(
+        "crm",
+        f"""
+        SELECT id, customer_id, region, issue, cell_id, created_at
+        FROM complaints
+        WHERE {' AND '.join(where)}
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        tuple(params),
+    )
+    return {
+        "filters": {
+            "cell_id": cell_id,
+            "region": region,
+            "issue": issue,
+            "window_min": window_min,
+            "limit": limit,
+        },
+        "count": len(rows),
+        "items": _serialize_rows(rows),
+    }
+
+
+def get_anomalies_atomic_service(
+    cell_id: str = "all",
+    region: str = "all",
+    severity: str = "all",
+    only_anomalies: bool = True,
+    window_min: int = 60,
+    limit: int = 200,
+) -> dict[str, Any]:
+    where = [
+        "metric_recorded_at >= NOW() - make_interval(mins => %s)",
+        "algorithm = 'combined'",
+    ]
+    params: list[Any] = [window_min]
+
+    if only_anomalies:
+        where.append("is_anomaly = TRUE")
+
+    cells = _resolve_cell_scope(cell_id, region)
+    if cells == []:
+        return {"filters": {"cell_id": cell_id, "region": region, "window_min": window_min, "limit": limit}, "count": 0, "items": []}
+    if cells:
+        in_sql, in_params = _in_clause(cells)
+        where.append(f"cell_id IN {in_sql}")
+        params.extend(in_params)
+
+    sev = _as_filter(severity)
+    if sev:
+        where.append("severity = %s")
+        params.append(sev)
+
+    params.append(limit)
+    rows = query_rows_on(
+        "assurance",
+        f"""
+        SELECT id, cell_id, metric_id, is_anomaly, anomaly_score, triggered_by,
+               severity, root_cause, metric_recorded_at, detected_at
+        FROM anomaly_results
+        WHERE {' AND '.join(where)}
+        ORDER BY metric_recorded_at DESC
+        LIMIT %s
+        """,
+        tuple(params),
+    )
+    return {
+        "filters": {
+            "cell_id": cell_id,
+            "region": region,
+            "severity": severity,
+            "only_anomalies": only_anomalies,
+            "window_min": window_min,
+            "limit": limit,
+        },
+        "count": len(rows),
+        "items": _serialize_rows(rows),
+    }
+
+
+def get_metrics_atomic_service(
+    cell_id: str = "all",
+    region: str = "all",
+    slice_type: str = "all",
+    window_min: int = 60,
+    limit: int = 200,
+) -> dict[str, Any]:
+    where = ["recorded_at >= NOW() - make_interval(mins => %s)"]
+    params: list[Any] = [window_min]
+
+    cells = _resolve_cell_scope(cell_id, region)
+    if cells == []:
+        return {"filters": {"cell_id": cell_id, "region": region, "window_min": window_min, "limit": limit}, "count": 0, "items": []}
+    if cells:
+        in_sql, in_params = _in_clause(cells)
+        where.append(f"cell_id IN {in_sql}")
+        params.extend(in_params)
+
+    s_type = _as_filter(slice_type)
+    if s_type:
+        where.append("slice_type = %s")
+        params.append(s_type)
+
+    params.append(limit)
+    rows = query_rows_on(
+        "telemetry",
+        f"""
+        SELECT id, cell_id, slice_type, rsrp_dbm, rsrq_db, throughput_mbps,
+               latency_ms, packet_loss_pct, connected_users, load_pct, recorded_at
+        FROM network_metrics
+        WHERE {' AND '.join(where)}
+        ORDER BY recorded_at DESC
+        LIMIT %s
+        """,
+        tuple(params),
+    )
+    return {
+        "filters": {
+            "cell_id": cell_id,
+            "region": region,
+            "slice_type": slice_type,
+            "window_min": window_min,
+            "limit": limit,
+        },
+        "count": len(rows),
+        "items": _serialize_rows(rows),
+    }
+
+
+def get_stations_atomic_service(
+    cell_id: str = "all",
+    region: str = "all",
+    status: str = "all",
+    limit: int = 200,
+) -> dict[str, Any]:
+    where = ["1=1"]
+    params: list[Any] = []
+
+    scoped_cell = _as_filter(cell_id)
+    if scoped_cell:
+        where.append("cell_id = %s")
+        params.append(scoped_cell)
+    scoped_region = _as_filter(region)
+    if scoped_region:
+        where.append("LOWER(region) = LOWER(%s)")
+        params.append(scoped_region)
+    scoped_status = _as_filter(status)
+    if scoped_status:
+        where.append("LOWER(status) = LOWER(%s)")
+        params.append(scoped_status)
+
+    params.append(limit)
+    rows = query_rows_on(
+        "inventory",
+        f"""
+        SELECT cell_id, region, lat, lng, status
+        FROM base_stations
+        WHERE {' AND '.join(where)}
+        ORDER BY cell_id
+        LIMIT %s
+        """,
+        tuple(params),
+    )
+    return {
+        "filters": {"cell_id": cell_id, "region": region, "status": status, "limit": limit},
+        "count": len(rows),
+        "items": _serialize_rows(rows),
+    }
+
+
+# def get_noc_overview_service(window_min: int = 15) -> dict[str, Any]:
+#     faults_sql = """
+#     SELECT
+#       COUNT(*) FILTER (WHERE resolved = FALSE) AS open_faults,
+#       COUNT(*) FILTER (WHERE resolved = FALSE AND severity = 'CRITICAL') AS critical_open_faults
+#     FROM faults
+#     WHERE created_at >= NOW() - make_interval(mins => %s)
+#     """
+#     anomalies_sql = """
+#     SELECT
+#       COUNT(*) AS total_rows,
+#       COUNT(*) FILTER (WHERE is_anomaly = TRUE) AS anomaly_rows
+#     FROM anomaly_results
+#     WHERE metric_recorded_at >= NOW() - make_interval(mins => %s)
+#       AND algorithm = 'combined'
+#     """
+#     complaints_sql = """
+#     SELECT COUNT(*) AS complaint_count
+#     FROM complaints
+#     WHERE created_at >= NOW() - make_interval(mins => %s)
+#     """
+#     metrics_sql = """
+#     SELECT COUNT(*) AS metrics_count
+#     FROM network_metrics
+#     WHERE recorded_at >= NOW() - make_interval(mins => %s)
+#     """
+#     f = query_rows_on("assurance", faults_sql, (window_min,))[0]
+#     a = query_rows_on("assurance", anomalies_sql, (window_min,))[0]
+#     c = query_rows_on("crm", complaints_sql, (window_min,))[0]
+#     m = query_rows_on("telemetry", metrics_sql, (window_min,))[0]
+
+#     total_anom = int(a["total_rows"] or 0)
+#     anomaly_rows = int(a["anomaly_rows"] or 0)
+#     anomaly_rate = (anomaly_rows / total_anom) if total_anom else 0.0
+
+#     return {
+#         "window_min": window_min,
+#         "open_faults": int(f["open_faults"] or 0),
+#         "critical_open_faults": int(f["critical_open_faults"] or 0),
+#         "anomaly_rate": round(anomaly_rate, 4),
+#         "complaint_count": int(c["complaint_count"] or 0),
+#         "metrics_count": int(m["metrics_count"] or 0),
+#     }
+
+
+# def get_region_risk_ranking_service(window_min: int = 60, top_n: int = 10) -> dict[str, Any]:
+#     inv = query_rows_on("inventory", "SELECT cell_id, region FROM base_stations")
+#     cell_to_region = {str(r["cell_id"]): str(r["region"]) for r in inv}
+#     regions = sorted(set(cell_to_region.values()))
+#     summary = {r: {"region": r, "faults": 0, "anomalies": 0, "complaints": 0, "risk_score": 0.0} for r in regions}
+
+#     faults = query_rows_on(
+#         "assurance",
+#         """
+#         SELECT cell_id, COUNT(*) AS cnt
+#         FROM faults
+#         WHERE created_at >= NOW() - make_interval(mins => %s)
+#         GROUP BY cell_id
+#         """,
+#         (window_min,),
+#     )
+#     anomalies = query_rows_on(
+#         "assurance",
+#         """
+#         SELECT cell_id, COUNT(*) AS cnt
+#         FROM anomaly_results
+#         WHERE metric_recorded_at >= NOW() - make_interval(mins => %s)
+#           AND is_anomaly = TRUE
+#           AND algorithm = 'combined'
+#         GROUP BY cell_id
+#         """,
+#         (window_min,),
+#     )
+#     complaints = query_rows_on(
+#         "crm",
+#         """
+#         SELECT region, COUNT(*) AS cnt
+#         FROM complaints
+#         WHERE created_at >= NOW() - make_interval(mins => %s)
+#         GROUP BY region
+#         """,
+#         (window_min,),
+#     )
+
+#     for row in faults:
+#         region = cell_to_region.get(str(row["cell_id"]))
+#         if region in summary:
+#             summary[region]["faults"] += int(row["cnt"] or 0)
+#     for row in anomalies:
+#         region = cell_to_region.get(str(row["cell_id"]))
+#         if region in summary:
+#             summary[region]["anomalies"] += int(row["cnt"] or 0)
+#     for row in complaints:
+#         region = str(row["region"])
+#         if region in summary:
+#             summary[region]["complaints"] += int(row["cnt"] or 0)
+
+#     for region_data in summary.values():
+#         region_data["risk_score"] = round(
+#             (region_data["faults"] * 0.5) + (region_data["anomalies"] * 0.3) + (region_data["complaints"] * 0.2),
+#             2,
+#         )
+
+#     ranked = sorted(summary.values(), key=lambda x: x["risk_score"], reverse=True)[:top_n]
+#     return {"window_min": window_min, "top_n": top_n, "count": len(ranked), "items": ranked}
+
+
+# def get_cell_health_score_service(cell_id: str, window_min: int = 60) -> dict[str, Any]:
+#     metrics = query_rows_on(
+#         "telemetry",
+#         """
+#         SELECT AVG(latency_ms) AS avg_latency,
+#                AVG(packet_loss_pct) AS avg_packet_loss,
+#                AVG(throughput_mbps) AS avg_throughput,
+#                AVG(load_pct) AS avg_load,
+#                AVG(rsrp_dbm) AS avg_rsrp,
+#                AVG(rsrq_db) AS avg_rsrq
+#         FROM network_metrics
+#         WHERE cell_id = %s
+#           AND recorded_at >= NOW() - make_interval(mins => %s)
+#         """,
+#         (cell_id, window_min),
+#     )[0]
+#     faults = query_rows_on(
+#         "assurance",
+#         """
+#         SELECT COUNT(*) FILTER (WHERE resolved = FALSE) AS open_faults
+#         FROM faults
+#         WHERE cell_id = %s
+#           AND created_at >= NOW() - make_interval(mins => %s)
+#         """,
+#         (cell_id, window_min),
+#     )[0]
+#     anomalies = query_rows_on(
+#         "assurance",
+#         """
+#         SELECT COUNT(*) AS anomaly_count
+#         FROM anomaly_results
+#         WHERE cell_id = %s
+#           AND metric_recorded_at >= NOW() - make_interval(mins => %s)
+#           AND is_anomaly = TRUE
+#           AND algorithm = 'combined'
+#         """,
+#         (cell_id, window_min),
+#     )[0]
+
+#     # Simple skeleton scoring (replace with calibrated formula later).
+#     score = 100.0
+#     score -= min(float(metrics["avg_latency"] or 0) / 5.0, 20)
+#     score -= min(float(metrics["avg_packet_loss"] or 0) * 4.0, 20)
+#     score -= min(int(faults["open_faults"] or 0) * 10.0, 30)
+#     score -= min(int(anomalies["anomaly_count"] or 0) * 2.0, 20)
+#     score = max(0.0, round(score, 2))
+
+#     return {
+#         "cell_id": cell_id,
+#         "window_min": window_min,
+#         "health_score": score,
+#         "open_faults": int(faults["open_faults"] or 0),
+#         "anomaly_count": int(anomalies["anomaly_count"] or 0),
+#         "metrics_summary": {k: (round(float(v), 3) if v is not None else None) for k, v in metrics.items()},
+#     }
+
+
+# def get_cross_domain_correlations_service(
+#     region: str | None = None,
+#     window_min: int = 120,
+#     min_severity: str = "MAJOR",
+# ) -> dict[str, Any]:
+#     sev = (min_severity or "MAJOR").upper()
+#     severity_rank = {"WARNING": 1, "MINOR": 2, "MAJOR": 3, "CRITICAL": 4}
+#     threshold = severity_rank.get(sev, 1)
+#     allowed = [k for k, v in severity_rank.items() if v >= threshold]
+#     cell_ids: list[str] | None = None
+#     if region:
+#         cell_ids = _inventory_cells_by_region(region)
+#         if not cell_ids:
+#             return {"region": region, "window_min": window_min, "count": 0, "items": []}
+
+#     where_cell = ""
+#     params_fault: list[Any] = [window_min]
+#     params_anom: list[Any] = [window_min, allowed]
+#     params_comp: list[Any] = [window_min]
+#     if cell_ids:
+#         in_sql, in_params = _in_clause(cell_ids)
+#         where_cell = f" AND cell_id IN {in_sql}"
+#         params_fault.extend(in_params)
+#         params_anom.extend(in_params)
+#         params_comp.extend(in_params)
+
+#     faults = query_rows_on(
+#         "assurance",
+#         f"""
+#         SELECT cell_id, COUNT(*) AS cnt
+#         FROM faults
+#         WHERE created_at >= NOW() - make_interval(mins => %s)
+#         {where_cell}
+#         GROUP BY cell_id
+#         """,
+#         tuple(params_fault),
+#     )
+#     anomalies = query_rows_on(
+#         "assurance",
+#         f"""
+#         SELECT cell_id, COUNT(*) AS cnt
+#         FROM anomaly_results
+#         WHERE metric_recorded_at >= NOW() - make_interval(mins => %s)
+#           AND is_anomaly = TRUE
+#           AND algorithm = 'combined'
+#           AND severity = ANY(%s::text[])
+#           {where_cell}
+#         GROUP BY cell_id
+#         """,
+#         tuple(params_anom),
+#     )
+#     complaints = query_rows_on(
+#         "crm",
+#         f"""
+#         SELECT cell_id, COUNT(*) AS cnt
+#         FROM complaints
+#         WHERE created_at >= NOW() - make_interval(mins => %s)
+#           AND cell_id IS NOT NULL
+#           {where_cell}
+#         GROUP BY cell_id
+#         """,
+#         tuple(params_comp),
+#     )
+
+#     f_map = {str(r["cell_id"]): int(r["cnt"] or 0) for r in faults}
+#     a_map = {str(r["cell_id"]): int(r["cnt"] or 0) for r in anomalies}
+#     c_map = {str(r["cell_id"]): int(r["cnt"] or 0) for r in complaints}
+#     cells = set(f_map.keys()) | set(a_map.keys()) | set(c_map.keys())
+
+#     items: list[dict[str, Any]] = []
+#     for cell in sorted(cells):
+#         f_cnt = f_map.get(cell, 0)
+#         a_cnt = a_map.get(cell, 0)
+#         c_cnt = c_map.get(cell, 0)
+#         signals: list[str] = []
+#         if f_cnt > 0:
+#             signals.append("fault_present")
+#         if a_cnt > 0:
+#             signals.append("anomaly_present")
+#         if c_cnt > 0:
+#             signals.append("complaint_present")
+#         if c_cnt == 0:
+#             signals.append("no_complaint")
+#         if f_cnt == 0:
+#             signals.append("no_fault")
+
+#         # Backward-compatible primary label for fast triage.
+#         if c_cnt > 0 and f_cnt == 0:
+#             corr = "complaint_spike_without_fault"
+#         elif f_cnt > 0 and c_cnt == 0:
+#             corr = "fault_without_complaints"
+#         elif a_cnt > 0 and f_cnt == 0:
+#             corr = "anomaly_without_fault"
+#         elif f_cnt > 0 and a_cnt > 0 and c_cnt > 0:
+#             corr = "fully_correlated"
+#         else:
+#             corr = "aligned"
+#         items.append(
+#             {
+#                 "cell_id": cell,
+#                 "fault_count": f_cnt,
+#                 "anomaly_count": a_cnt,
+#                 "complaint_count": c_cnt,
+#                 "primary_correlation": corr,
+#                 "signals": signals,
+#             }
+#         )
+
+#     return {
+#         "region": region,
+#         "window_min": window_min,
+#         "min_severity": sev,
+#         "count": len(items),
+#         "items": items,
+#     }
+
+
+# def get_incident_timeline_service(cell_id: str, since: str) -> dict[str, Any]:
+#     metrics = query_rows_on(
+#         "telemetry",
+#         """
+#         SELECT 'metric'::text AS event_type, recorded_at AS event_time,
+#                json_build_object(
+#                  'latency_ms', latency_ms,
+#                  'packet_loss_pct', packet_loss_pct,
+#                  'throughput_mbps', throughput_mbps,
+#                  'load_pct', load_pct
+#                ) AS details
+#         FROM network_metrics
+#         WHERE cell_id = %s AND recorded_at >= %s
+#         ORDER BY recorded_at DESC
+#         LIMIT 200
+#         """,
+#         (cell_id, since),
+#     )
+#     anomalies = query_rows_on(
+#         "assurance",
+#         """
+#         SELECT 'anomaly'::text AS event_type, metric_recorded_at AS event_time,
+#                json_build_object(
+#                  'severity', severity,
+#                  'score', anomaly_score,
+#                  'root_cause', root_cause
+#                ) AS details
+#         FROM anomaly_results
+#         WHERE cell_id = %s AND metric_recorded_at >= %s AND algorithm='combined'
+#         ORDER BY metric_recorded_at DESC
+#         LIMIT 200
+#         """,
+#         (cell_id, since),
+#     )
+#     faults = query_rows_on(
+#         "assurance",
+#         """
+#         SELECT 'fault'::text AS event_type, created_at AS event_time,
+#                json_build_object(
+#                  'severity', severity,
+#                  'fault_type', fault_type,
+#                  'resolved', resolved,
+#                  'message', message
+#                ) AS details
+#         FROM faults
+#         WHERE cell_id = %s AND created_at >= %s
+#         ORDER BY created_at DESC
+#         LIMIT 200
+#         """,
+#         (cell_id, since),
+#     )
+#     complaints = query_rows_on(
+#         "crm",
+#         """
+#         SELECT 'complaint'::text AS event_type, created_at AS event_time,
+#                json_build_object(
+#                  'issue', issue,
+#                  'customer_id', customer_id
+#                ) AS details
+#         FROM complaints
+#         WHERE cell_id = %s AND created_at >= %s
+#         ORDER BY created_at DESC
+#         LIMIT 200
+#         """,
+#         (cell_id, since),
+#     )
+
+#     timeline = metrics + anomalies + faults + complaints
+#     timeline = sorted(timeline, key=lambda r: r["event_time"], reverse=True)
+#     return {"cell_id": cell_id, "since": since, "count": len(timeline), "items": _serialize_rows(timeline)}
+
+
+# def get_slice_sla_breaches_service(slice_type: str | None = None, window_min: int = 60) -> dict[str, Any]:
+#     where = ["recorded_at >= NOW() - make_interval(mins => %s)"]
+#     params: list[Any] = [window_min]
+#     if slice_type:
+#         where.append("slice_type = %s")
+#         params.append(slice_type)
+
+#     sql = f"""
+#     SELECT slice_type,
+#            COUNT(*) AS total_samples,
+#            COUNT(*) FILTER (WHERE latency_ms > CASE
+#              WHEN slice_type='URLLC' THEN 10
+#              WHEN slice_type='eMBB' THEN 60
+#              ELSE 120 END) AS latency_breaches,
+#            COUNT(*) FILTER (WHERE packet_loss_pct > CASE
+#              WHEN slice_type='URLLC' THEN 1
+#              WHEN slice_type='eMBB' THEN 3
+#              ELSE 5 END) AS packet_loss_breaches
+#     FROM network_metrics
+#     WHERE {' AND '.join(where)}
+#     GROUP BY slice_type
+#     ORDER BY total_samples DESC
+#     """
+#     rows = query_rows_on("telemetry", sql, tuple(params))
+#     items = []
+#     for r in rows:
+#         total = int(r["total_samples"] or 0)
+#         lat_b = int(r["latency_breaches"] or 0)
+#         pl_b = int(r["packet_loss_breaches"] or 0)
+#         items.append(
+#             {
+#                 "slice_type": r["slice_type"],
+#                 "total_samples": total,
+#                 "latency_breaches": lat_b,
+#                 "packet_loss_breaches": pl_b,
+#                 "latency_breach_rate": round((lat_b / total) if total else 0.0, 4),
+#                 "packet_loss_breach_rate": round((pl_b / total) if total else 0.0, 4),
+#             }
+#         )
+#     return {"window_min": window_min, "slice_type": slice_type, "count": len(items), "items": items}
+
+
+# def get_recommended_actions_service(target_type: str, target_id: str) -> dict[str, Any]:
+#     target_type = target_type.lower().strip()
+#     actions: list[str] = []
+#     rationale: list[str] = []
+
+#     if target_type == "cell":
+#         health = get_cell_health_score_service(cell_id=target_id, window_min=60)
+#         if health["open_faults"] > 0:
+#             actions.append("Open fault kayitlarini onceliklendir ve saha ekibini yonlendir.")
+#             rationale.append("Cell uzerinde acik fault var.")
+#         if health["anomaly_count"] > 5:
+#             actions.append("Son 60 dk anomaly trendini inceleyip threshold tuning baslat.")
+#             rationale.append("Anomaly yogunlugu yuksek.")
+#         actions.append("Komsu hucre handover/load durumunu kontrol et.")
+#     elif target_type == "region":
+#         actions.extend(
+#             [
+#                 "Bolge risk siralamasina gore ilk 3 hucre icin war-room ac.",
+#                 "CRM sikayet tiplerini fault tipleriyle eslestirip runbook tetikle.",
+#                 "Backhaul/fiber ve RAN ekipleriyle ortak triage baslat.",
+#             ]
+#         )
+#         rationale.append("Bolgesel olaylarda domainler arasi koordinasyon gerekir.")
+#     elif target_type == "fault_type":
+#         mapping = {
+#             "fiber_cut": "Backhaul link continuity testi ve saha kablo denetimi yap.",
+#             "interference": "Frekans taramasi ve dis kaynak girisim analizi yap.",
+#             "slice_congestion": "Slice policy ve resource re-allocation uygula.",
+#             "hw_failure": "Saha ekip sevki + donanim degisim proseduru baslat.",
+#         }
+#         actions.append(mapping.get(target_id.lower(), "Genel incident runbook adimlarini uygula."))
+#         rationale.append("Fault tipine gore kural tabanli aksiyon.")
+#     else:
+#         actions.append("Target type desteklenmiyor: cell | region | fault_type kullan.")
+#         rationale.append("Gecerli hedef tipi gerekli.")
+
+#     return {
+#         "target_type": target_type,
+#         "target_id": target_id,
+#         "actions": actions,
+#         "rationale": rationale,
+#     }
 
 
 def get_metrics_service(
