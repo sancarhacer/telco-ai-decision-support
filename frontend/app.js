@@ -563,6 +563,60 @@ function renderResponse(data, route, metricType = null) {
   return container;
 }
 
+
+function renderLlmResponse(payload) {
+  const container = document.createElement("div");
+
+  const summaryCard = document.createElement("div");
+  summaryCard.className = "summary";
+  summaryCard.innerHTML = `
+    <div class="summary-title">Sonuc Ozeti</div>
+    <div class="summary-text">${payload.summary || "Sonuc olusturulamadi."}</div>
+  `;
+  container.appendChild(summaryCard);
+
+  const rootCause = document.createElement("div");
+  rootCause.className = "summary";
+  rootCause.innerHTML = `
+    <div class="summary-title">Root Cause</div>
+    <div class="summary-text">${payload.root_cause || "Belirsiz"}</div>
+  `;
+  container.appendChild(rootCause);
+
+  const actions = Array.isArray(payload.recommended_actions) ? payload.recommended_actions : [];
+  const actionsCard = document.createElement("div");
+  actionsCard.className = "summary";
+  actionsCard.innerHTML = `
+    <div class="summary-title">Recommended Actions</div>
+    <div class="summary-text">
+      ${actions.length ? actions.map((a) => `- ${a}`).join("<br>") : "Aksiyon bulunamadi."}
+    </div>
+  `;
+  container.appendChild(actionsCard);
+
+  const confidenceVal = Number(payload.confidence ?? 0);
+  const confidence = Number.isFinite(confidenceVal) ? confidenceVal : 0;
+  const confidenceCard = document.createElement("div");
+  confidenceCard.className = "summary";
+  confidenceCard.innerHTML = `
+    <div class="summary-title">Confidence</div>
+    <div class="summary-text">${(Math.max(0, Math.min(1, confidence)) * 100).toFixed(0)}%</div>
+  `;
+  container.appendChild(confidenceCard);
+
+  const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
+  if (evidence.length > 0) {
+    const evCard = document.createElement("div");
+    evCard.className = "summary";
+    evCard.innerHTML = `
+      <div class="summary-title">Evidence</div>
+      <div class="summary-text"><pre style="white-space: pre-wrap; margin: 0;">${JSON.stringify(evidence, null, 2)}</pre></div>
+    `;
+    container.appendChild(evCard);
+  }
+
+  return container;
+}
 chatForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const message = messageInput.value.trim();
@@ -596,7 +650,7 @@ chatForm.addEventListener("submit", async (e) => {
     }
 
     // Formatlanmış yanıt
-    const formattedResponse = renderResponse(responseData.data, responseData.route, responseData.metric_type);
+    const formattedResponse = renderLlmResponse(responseData);
     addMessage(formattedResponse, "bot");
 
   } catch (err) {
@@ -604,3 +658,4 @@ chatForm.addEventListener("submit", async (e) => {
     addMessage(`❌ Bağlantı hatası: ${err.message}`, "bot");
   }
 });
+
