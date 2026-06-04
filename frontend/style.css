@@ -50,11 +50,7 @@ body {
 .site-header-inner {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 14px 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  padding: 10px 24px;
 }
 
 .brand {
@@ -62,6 +58,10 @@ body {
   align-items: center;
   gap: 14px;
   text-decoration: none;
+  color: var(--text-primary);
+}
+
+.brand:hover {
   color: var(--text-primary);
 }
 
@@ -106,6 +106,23 @@ body {
   font-size: 0.9rem;
 }
 
+.noc-navbar {
+  padding: 0;
+}
+
+.noc-navbar-toggler {
+  border-color: var(--border);
+  background: rgba(51, 209, 255, 0.08);
+}
+
+.noc-navbar-toggler:focus {
+  box-shadow: 0 0 0 0.2rem rgba(51, 209, 255, 0.18);
+}
+
+.noc-navbar .navbar-toggler-icon {
+  filter: invert(1) brightness(1.6);
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
@@ -115,15 +132,13 @@ body {
 }
 
 .top-nav {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 0 24px 14px;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-.top-nav a {
+.top-nav a,
+.top-nav .nav-link {
   text-decoration: none;
   color: var(--text-secondary);
   padding: 10px 14px;
@@ -133,7 +148,9 @@ body {
 }
 
 .top-nav a:hover,
-.top-nav a.active {
+.top-nav a.active,
+.top-nav .nav-link:hover,
+.top-nav .nav-link.active {
   color: var(--text-primary);
   background: rgba(51, 209, 255, 0.1);
   border-color: rgba(51, 209, 255, 0.22);
@@ -147,10 +164,6 @@ body {
 }
 
 .page-hero {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 24px;
   padding: 28px;
   margin-bottom: 24px;
   background: linear-gradient(135deg, var(--bg-panel) 0%, var(--bg-panel-2) 100%);
@@ -192,6 +205,11 @@ body {
   background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-blue) 100%);
   font-weight: 700;
   box-shadow: 0 10px 24px var(--glow-cyan);
+}
+
+.hero-link:hover {
+  color: var(--bg-main);
+  transform: translateY(-1px);
 }
 
 .overview-grid {
@@ -245,6 +263,10 @@ body {
   cursor: pointer;
 }
 
+.page-link-card.h-100 {
+  display: block;
+}
+
 .site-footer {
   border-top: 1px solid var(--border);
   margin-top: 32px;
@@ -259,6 +281,29 @@ body {
   gap: 12px;
   color: var(--text-muted);
   font-size: 0.88rem;
+}
+
+@media (max-width: 991.98px) {
+  .site-header-inner {
+    padding: 10px 16px;
+  }
+
+  .top-nav {
+    padding-top: 14px;
+    gap: 8px;
+  }
+
+  .top-nav .nav-link {
+    width: 100%;
+  }
+
+  .page-hero {
+    padding: 22px;
+  }
+
+  .page-title {
+    font-size: 1.8rem;
+  }
 }
 
 .header {

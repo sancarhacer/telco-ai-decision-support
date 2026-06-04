@@ -1,24 +1,46 @@
 <header class="site-header">
   <div class="site-header-inner">
-    <a class="brand" href="./index.html">
-      <span class="brand-mark">NOC</span>
-      <div class="brand-copy">
-        <strong>Telecom NOC Center</strong>
-        <span>Network visibility and decision support</span>
+    <nav class="navbar navbar-expand-lg noc-navbar w-100">
+      <div class="container-fluid px-0">
+        <a class="brand navbar-brand me-4" href="./index.html">
+          <span class="brand-mark">NOC</span>
+          <span class="brand-copy">
+            <strong>Telecom NOC Center</strong>
+            <span>Network visibility and decision support</span>
+          </span>
+        </a>
+
+        <div class="status-chip d-none d-lg-inline-flex order-lg-3">
+          <span class="status-dot"></span>
+          <span>Live Monitoring</span>
+        </div>
+
+        <button
+          class="navbar-toggler noc-navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#topNav"
+          aria-controls="topNav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="topNav">
+          <div class="top-nav navbar-nav ms-auto">
+            <a class="nav-link" href="./index.html">Overview</a>
+            <a class="nav-link" href="./regions.html">Regions</a>
+            <a class="nav-link" href="./alarms.html">Alarms</a>
+            <a class="nav-link" href="./cell.html">Cell Drilldown</a>
+            <a class="nav-link" href="./chat.html">Chat Analyst</a>
+          </div>
+          <div class="status-chip mt-3 d-inline-flex d-lg-none">
+            <span class="status-dot"></span>
+            <span>Live Monitoring</span>
+          </div>
+        </div>
       </div>
-    </a>
-
-    <div class="status-chip">
-      <span class="status-dot"></span>
-      <span>Live Monitoring</span>
-    </div>
+    </nav>
   </div>
-
-  <nav class="top-nav" aria-label="Primary">
-    <a href="./index.html">Overview</a>
-    <a href="./regions.html">Regions</a>
-    <a href="./alarms.html">Alarms</a>
-    <a href="./cell.html">Cell Drilldown</a>
-    <a href="./chat.html">Chat Analyst</a>
-  </nav>
 </header>
