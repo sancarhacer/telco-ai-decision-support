@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telecom NOC Center - Chat Analyst</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body>
+  <div id="siteHeader"></div>
+
+  <main class="container">
+    <header class="page-hero">
+      <div>
+        <p class="eyebrow">Chat Analyst</p>
+        <h1 class="page-title">Ağ olaylarını sohbetle analiz et</h1>
+        <p class="page-description">
+          MCP tool verilerini kullanarak root cause, evidence ve öneri üretir.
+        </p>
+      </div>
+    </header>
+
+    <div class="examples">
+      <span class="example-label">Örnek sorgular:</span>
+      <button class="example-btn" data-query="Buca için anomali var mı?">Buca anomalileri</button>
+      <button class="example-btn" data-query="CELL_017 metriklerini göster">CELL_017 metrikleri</button>
+      <button class="example-btn" data-query="Konak bölgesinde arıza var mı?">Konak arızaları</button>
+    </div>
+
+    <section id="chatBox" class="chat-box"></section>
+
+    <form id="chatForm" class="chat-form">
+      <input id="messageInput" type="text" placeholder="Sorgunuzu yazın... (örn: Buca için anomali var mı?)" required />
+      <input id="limitInput" type="number" min="1" max="200" value="20" title="Sonuç limiti" />
+      <button type="submit">
+        <span>Gönder</span>
+        <span class="btn-icon">→</span>
+      </button>
+    </form>
+  </main>
+
+  <div id="siteFooter"></div>
+
+  <script src="./js/main.js"></script>
+  <script src="./app.js"></script>
+</body>
+
+</html>

@@ -4,37 +4,63 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Telecom NOC Assistant</title>
+  <title>Telecom NOC Center - Overview</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 
 <body>
+  <div id="siteHeader"></div>
+
   <main class="container">
-    <header class="header">
-      <h1>🔍 Telecom NOC Assistant</h1>
-      <p class="subtitle">Ağ anomalilerini ve sorunları sorgulayın</p>
+    <header class="page-hero">
+      <div>
+        <p class="eyebrow">Overview</p>
+        <h1 class="page-title">Telecom NOC operasyon merkezine genel bakış</h1>
+        <p class="page-description">
+          Bu ana ekran kritik alarmlar, bölgeler, cell inceleme ve chat analiz ekranlarına hızlı geçiş noktası olacak.
+        </p>
+      </div>
+      <a class="hero-link" href="./chat.html">Chat Analyst ekranını aç</a>
     </header>
 
-    <div class="examples">
-      <span class="example-label">Örnek sorgular:</span>
-      <button class="example-btn" data-query="Buca için anomali var mı?">Buca anomalileri</button>
-      <button class="example-btn" data-query="CELL_017 metriklerini göster">CELL_017 metrikleri</button>
-      <button class="example-btn" data-query="Konak bölgesinde arıza var mı?">Konak arızaları</button>
-    </div>
+    <section class="overview-grid">
+      <article class="overview-card overview-card-wide">
+        <p class="overview-card-label">Genel yaklaşım</p>
+        <h2>Overview -> Hotspot -> Drilldown -> Action</h2>
+        <p>
+          Ana sayfa ağın genel sağlığını göstermeli; detay analizler ayrı sayfalarda açılmalı.
+        </p>
+      </article>
 
-    <section id="chatBox" class="chat-box"></section>
+      <a class="overview-card page-link-card" href="./regions.html">
+        <p class="overview-card-label">Bölgeler</p>
+        <h2>Riskli bölgeleri incele</h2>
+        <p>Fault, complaint ve anomaly yoğunluklarını bölge bazında göster.</p>
+      </a>
 
-    <form id="chatForm" class="chat-form">
-      <input id="messageInput" type="text" placeholder="Sorgunuzu yazın... (örn: Buca için anomali var mı?)" required />
-      <input id="limitInput" type="number" min="1" max="200" value="20" title="Sonuç limiti" />
-      <button type="submit">
-        <span>Gönder</span>
-        <span class="btn-icon">→</span>
-      </button>
-    </form>
+      <a class="overview-card page-link-card" href="./alarms.html">
+        <p class="overview-card-label">Alarmlar</p>
+        <h2>Açık olayları triage et</h2>
+        <p>Severity, durum ve zaman filtresiyle alarm yönetimi.</p>
+      </a>
+
+      <a class="overview-card page-link-card" href="./cell.html">
+        <p class="overview-card-label">Cell Drilldown</p>
+        <h2>Seçili cell detayına in</h2>
+        <p>Metrikler, anomaliler, fault geçmişi ve sağlık görünümü.</p>
+      </a>
+
+      <a class="overview-card page-link-card" href="./chat.html">
+        <p class="overview-card-label">Chat Analyst</p>
+        <h2>Doğal dille sorgu yap</h2>
+        <p>Tool-calling destekli analiz, özet ve öneri üretimi.</p>
+      </a>
+    </section>
   </main>
 
-  <script src="./app.js"></script>
+  <div id="siteFooter"></div>
+
+  <script src="./js/main.js"></script>
 </body>
 
 </html>

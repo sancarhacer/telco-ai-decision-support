@@ -242,7 +242,7 @@ def _run_llm_tool_loop(user_message: str, limit: int) -> dict[str, Any]:
         {"role": "user", "content": user_message},
     ]
 
-    for _ in range(4):
+    for _ in range(3):
         resp = client.chat.completions.create(
             model=LLM_MODEL,
             messages=messages,
