@@ -19,8 +19,11 @@ from services import (
     get_complaints_service,
     get_faults_atomic_service,
     get_faults_service,
+    get_homepage_summary_service,
     get_metrics_atomic_service,
     get_metrics_service,
+    get_recent_event_stream_service,
+    get_region_risk_ranking_service,
     get_station_service,
     get_stations_atomic_service,
 )
@@ -332,6 +335,38 @@ def root() -> dict[str, str]:
     return {"message": "Telecom NOC API is running"}
 
 
+@app.get("/overview/summary")
+def overview_summary_endpoint(
+    window_min: int = Query(default=60, ge=5, le=1440),
+):
+    try:
+        return get_homepage_summary_service(window_min=window_min)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/overview/regions")
+def overview_regions_endpoint(
+    window_min: int = Query(default=60, ge=5, le=1440),
+    top_n: int = Query(default=5, ge=1, le=10),
+):
+    try:
+        return get_region_risk_ranking_service(window_min=window_min, top_n=top_n)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/overview/events")
+def overview_events_endpoint(
+    window_min: int = Query(default=60, ge=5, le=1440),
+    limit: int = Query(default=12, ge=3, le=30),
+):
+    try:
+        return get_recent_event_stream_service(window_min=window_min, limit=limit)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/metrics")
 def metrics_endpoint(
     cell_id: str,
@@ -371,12 +406,13 @@ def anomalies_endpoint(
 def faults_endpoint(
     cell_id: str | None = None,
     region: str | None = None,
+    severity: str | None = None,
     resolved: bool | None = None,
     limit: int = Query(default=50, ge=1, le=1000),
 ):
     try:
         return get_faults_service(
-            cell_id=cell_id, region=region, resolved=resolved, limit=limit
+            cell_id=cell_id, region=region, severity=severity, resolved=resolved, limit=limit
         )
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))

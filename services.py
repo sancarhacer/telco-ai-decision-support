@@ -394,6 +394,325 @@ def get_stations_atomic_service(
     }
 
 
+def get_homepage_summary_service(window_min: int = 60) -> dict[str, Any]:
+    faults_summary = query_rows_on(
+        "assurance",
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE resolved = FALSE AND severity = 'CRITICAL') AS critical_open_faults,
+            MAX(created_at) AS latest_fault_at
+        FROM faults
+        WHERE created_at >= NOW() - make_interval(mins => %s)
+        """,
+        (window_min,),
+    )[0]
+
+    anomalies_summary = query_rows_on(
+        "assurance",
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE is_anomaly = TRUE AND algorithm = 'combined') AS anomaly_count,
+            MAX(metric_recorded_at) AS latest_anomaly_at
+        FROM anomaly_results
+        WHERE metric_recorded_at >= NOW() - make_interval(mins => %s)
+        """,
+        (window_min,),
+    )[0]
+
+    complaints_summary = query_rows_on(
+        "crm",
+        """
+        SELECT
+            COUNT(*) AS complaint_count,
+            MAX(created_at) AS latest_complaint_at
+        FROM complaints
+        WHERE created_at >= NOW() - make_interval(mins => %s)
+        """,
+        (window_min,),
+    )[0]
+
+    metrics_summary = query_rows_on(
+        "telemetry",
+        """
+        SELECT MAX(recorded_at) AS latest_metric_at
+        FROM network_metrics
+        WHERE recorded_at >= NOW() - make_interval(mins => %s)
+        """,
+        (window_min,),
+    )[0]
+
+    inventory_rows = query_rows_on("inventory", "SELECT cell_id, region FROM base_stations")
+    cell_to_region = {
+        str(row["cell_id"]): str(row["region"])
+        for row in inventory_rows
+        if row.get("cell_id") is not None and row.get("region") is not None
+    }
+    region_summary: dict[str, dict[str, Any]] = {}
+
+    def ensure_region(region_name: str) -> dict[str, Any]:
+        return region_summary.setdefault(
+            region_name,
+            {
+                "region": region_name,
+                "faults": 0,
+                "anomalies": 0,
+                "complaints": 0,
+                "risk_score": 0.0,
+            },
+        )
+
+    fault_regions = query_rows_on(
+        "assurance",
+        """
+        SELECT cell_id, COUNT(*) AS cnt
+        FROM faults
+        WHERE created_at >= NOW() - make_interval(mins => %s)
+          AND resolved = FALSE
+        GROUP BY cell_id
+        """,
+        (window_min,),
+    )
+    for row in fault_regions:
+        region_name = cell_to_region.get(str(row["cell_id"]))
+        if not region_name:
+            continue
+        ensure_region(region_name)["faults"] += int(row["cnt"] or 0)
+
+    anomaly_regions = query_rows_on(
+        "assurance",
+        """
+        SELECT cell_id, COUNT(*) AS cnt
+        FROM anomaly_results
+        WHERE metric_recorded_at >= NOW() - make_interval(mins => %s)
+          AND is_anomaly = TRUE
+          AND algorithm = 'combined'
+        GROUP BY cell_id
+        """,
+        (window_min,),
+    )
+    for row in anomaly_regions:
+        region_name = cell_to_region.get(str(row["cell_id"]))
+        if not region_name:
+            continue
+        ensure_region(region_name)["anomalies"] += int(row["cnt"] or 0)
+
+    complaint_regions = query_rows_on(
+        "crm",
+        """
+        SELECT region, COUNT(*) AS cnt
+        FROM complaints
+        WHERE created_at >= NOW() - make_interval(mins => %s)
+        GROUP BY region
+        """,
+        (window_min,),
+    )
+    for row in complaint_regions:
+        region_name = str(row["region"])
+        ensure_region(region_name)["complaints"] += int(row["cnt"] or 0)
+
+    ranked_regions: list[dict[str, Any]] = []
+    for item in region_summary.values():
+        item["risk_score"] = round(
+            (item["faults"] * 0.5) + (item["anomalies"] * 0.3) + (item["complaints"] * 0.2),
+            2,
+        )
+        ranked_regions.append(item)
+
+    ranked_regions.sort(key=lambda item: item["risk_score"], reverse=True)
+    affected_region_count = sum(
+        1
+        for item in ranked_regions
+        if item["faults"] > 0 or item["anomalies"] > 0 or item["complaints"] > 0
+    )
+
+    latest_values = [
+        faults_summary.get("latest_fault_at"),
+        anomalies_summary.get("latest_anomaly_at"),
+        complaints_summary.get("latest_complaint_at"),
+        metrics_summary.get("latest_metric_at"),
+    ]
+    latest_timestamp = max((value for value in latest_values if value is not None), default=None)
+
+    return {
+        "window_min": window_min,
+        "critical_open_faults": int(faults_summary.get("critical_open_faults") or 0),
+        "anomaly_count": int(anomalies_summary.get("anomaly_count") or 0),
+        "complaint_count": int(complaints_summary.get("complaint_count") or 0),
+        "affected_region_count": affected_region_count,
+        "riskiest_region": ranked_regions[0] if ranked_regions else None,
+        "last_updated_at": _serialize_value(latest_timestamp),
+    }
+
+
+def get_region_risk_ranking_service(window_min: int = 60, top_n: int = 5) -> dict[str, Any]:
+    inventory_rows = query_rows_on("inventory", "SELECT cell_id, region FROM base_stations")
+    cell_to_region = {
+        str(row["cell_id"]): str(row["region"])
+        for row in inventory_rows
+        if row.get("cell_id") is not None and row.get("region") is not None
+    }
+
+    summary: dict[str, dict[str, Any]] = {}
+
+    def ensure_region(region_name: str) -> dict[str, Any]:
+        return summary.setdefault(
+            region_name,
+            {
+                "region": region_name,
+                "faults": 0,
+                "anomalies": 0,
+                "complaints": 0,
+                "risk_score": 0.0,
+            },
+        )
+
+    faults = query_rows_on(
+        "assurance",
+        """
+        SELECT cell_id, COUNT(*) AS cnt
+        FROM faults
+        WHERE created_at >= NOW() - make_interval(mins => %s)
+          AND resolved = FALSE
+        GROUP BY cell_id
+        """,
+        (window_min,),
+    )
+    for row in faults:
+        region_name = cell_to_region.get(str(row["cell_id"]))
+        if region_name:
+            ensure_region(region_name)["faults"] += int(row["cnt"] or 0)
+
+    anomalies = query_rows_on(
+        "assurance",
+        """
+        SELECT cell_id, COUNT(*) AS cnt
+        FROM anomaly_results
+        WHERE metric_recorded_at >= NOW() - make_interval(mins => %s)
+          AND is_anomaly = TRUE
+          AND algorithm = 'combined'
+        GROUP BY cell_id
+        """,
+        (window_min,),
+    )
+    for row in anomalies:
+        region_name = cell_to_region.get(str(row["cell_id"]))
+        if region_name:
+            ensure_region(region_name)["anomalies"] += int(row["cnt"] or 0)
+
+    complaints = query_rows_on(
+        "crm",
+        """
+        SELECT region, COUNT(*) AS cnt
+        FROM complaints
+        WHERE created_at >= NOW() - make_interval(mins => %s)
+        GROUP BY region
+        """,
+        (window_min,),
+    )
+    for row in complaints:
+        region_name = str(row["region"])
+        ensure_region(region_name)["complaints"] += int(row["cnt"] or 0)
+
+    ranked = list(summary.values())
+    for item in ranked:
+        item["risk_score"] = round(
+            (item["faults"] * 0.5) + (item["anomalies"] * 0.3) + (item["complaints"] * 0.2),
+            2,
+        )
+
+    ranked.sort(key=lambda item: item["risk_score"], reverse=True)
+    items = [item for item in ranked if item["risk_score"] > 0][:top_n]
+    return {
+        "window_min": window_min,
+        "top_n": top_n,
+        "count": len(items),
+        "items": items,
+    }
+
+
+def get_recent_event_stream_service(window_min: int = 60, limit: int = 12) -> dict[str, Any]:
+    faults = query_rows(
+        """
+        SELECT f.cell_id, bs.region, f.severity, f.fault_type, f.created_at
+        FROM faults f
+        JOIN base_stations bs ON bs.cell_id = f.cell_id
+        WHERE f.created_at >= NOW() - make_interval(mins => %s)
+        ORDER BY f.created_at DESC
+        LIMIT %s
+        """,
+        (window_min, limit),
+    )
+
+    complaints = query_rows_on(
+        "crm",
+        """
+        SELECT cell_id, region, issue, created_at
+        FROM complaints
+        WHERE created_at >= NOW() - make_interval(mins => %s)
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        (window_min, limit),
+    )
+
+    anomalies = query_rows(
+        """
+        SELECT ar.cell_id, bs.region, ar.severity, ar.root_cause, ar.metric_recorded_at
+        FROM anomaly_results ar
+        JOIN base_stations bs ON bs.cell_id = ar.cell_id
+        WHERE ar.metric_recorded_at >= NOW() - make_interval(mins => %s)
+          AND ar.is_anomaly = TRUE
+          AND ar.algorithm = 'combined'
+        ORDER BY ar.metric_recorded_at DESC
+        LIMIT %s
+        """,
+        (window_min, limit),
+    )
+
+    items: list[dict[str, Any]] = []
+    for row in faults:
+        items.append(
+            {
+                "event_type": "fault",
+                "cell_id": row["cell_id"],
+                "region": row["region"],
+                "severity": row["severity"],
+                "label": row["fault_type"],
+                "timestamp": _serialize_value(row["created_at"]),
+            }
+        )
+    for row in complaints:
+        items.append(
+            {
+                "event_type": "complaint",
+                "cell_id": row.get("cell_id"),
+                "region": row.get("region"),
+                "severity": "INFO",
+                "label": row.get("issue") or "Complaint",
+                "timestamp": _serialize_value(row["created_at"]),
+            }
+        )
+    for row in anomalies:
+        items.append(
+            {
+                "event_type": "anomaly",
+                "cell_id": row["cell_id"],
+                "region": row["region"],
+                "severity": row["severity"] or "WARNING",
+                "label": row.get("root_cause") or "Anomaly detected",
+                "timestamp": _serialize_value(row["metric_recorded_at"]),
+            }
+        )
+
+    items.sort(key=lambda item: item["timestamp"] or "", reverse=True)
+    items = items[:limit]
+    return {
+        "window_min": window_min,
+        "count": len(items),
+        "items": items,
+    }
+
+
 # def get_noc_overview_service(window_min: int = 15) -> dict[str, Any]:
 #     faults_sql = """
 #     SELECT
@@ -916,6 +1235,7 @@ def get_anomalies_service(
 def get_faults_service(
     cell_id: str | None = None,
     region: str | None = None,
+    severity: str | None = None,
     resolved: bool | None = None,
     limit: int = 50,
     group_by_region: bool = False,
@@ -928,6 +1248,9 @@ def get_faults_service(
     if region:
         where.append("LOWER(bs.region) = LOWER(%s)")
         params.append(region)
+    if severity:
+        where.append("f.severity = %s")
+        params.append(severity)
     if resolved is not None:
         where.append("f.resolved = %s")
         params.append(resolved)
@@ -948,7 +1271,7 @@ def get_faults_service(
         params.append(limit)
         rows = _serialize_rows(query_rows(sql, tuple(params)))
         return {
-            "filters": {"group_by": "region", "resolved": resolved, "limit": limit},
+            "filters": {"group_by": "region", "severity": severity, "resolved": resolved, "limit": limit},
             "count": len(rows),
             "grouped": True,
             "items": rows,
@@ -969,6 +1292,7 @@ def get_faults_service(
         "filters": {
             "cell_id": cell_id,
             "region": region,
+            "severity": severity,
             "resolved": resolved,
             "limit": limit,
         },
