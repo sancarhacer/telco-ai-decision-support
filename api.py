@@ -23,6 +23,7 @@ from services import (
     get_metrics_atomic_service,
     get_metrics_service,
     get_recent_event_stream_service,
+    get_region_detail_service,
     get_region_risk_ranking_service,
     get_station_service,
     get_stations_atomic_service,
@@ -363,6 +364,18 @@ def overview_events_endpoint(
 ):
     try:
         return get_recent_event_stream_service(window_min=window_min, limit=limit)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/regions/detail")
+def region_detail_endpoint(
+    region: str,
+    window_min: int = Query(default=30, ge=5, le=1440),
+    limit: int = Query(default=8, ge=3, le=20),
+):
+    try:
+        return get_region_detail_service(region=region, window_min=window_min, limit=limit)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 

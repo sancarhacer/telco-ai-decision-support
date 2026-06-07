@@ -713,6 +713,69 @@ def get_recent_event_stream_service(window_min: int = 60, limit: int = 12) -> di
     }
 
 
+def get_region_detail_service(region: str, window_min: int = 30, limit: int = 8) -> dict[str, Any]:
+    region_name = (region or "").strip()
+    if not region_name:
+        raise RuntimeError("region is required")
+
+    faults = get_faults_atomic_service(
+        region=region_name,
+        resolved="all",
+        window_min=window_min,
+        limit=limit,
+    )
+    anomalies = get_anomalies_atomic_service(
+        region=region_name,
+        severity="all",
+        only_anomalies=True,
+        window_min=window_min,
+        limit=limit,
+    )
+    complaints = get_complaints_atomic_service(
+        region=region_name,
+        issue="all",
+        window_min=window_min,
+        limit=limit,
+    )
+    stations = get_stations_atomic_service(
+        region=region_name,
+        status="all",
+        limit=200,
+    )
+
+    station_items = stations.get("items", [])
+    active_station_count = sum(
+        1 for item in station_items if str(item.get("status", "")).lower() == "active"
+    )
+
+    severity_mix: dict[str, int] = {"CRITICAL": 0, "MAJOR": 0, "MINOR": 0, "WARNING": 0}
+    for item in faults.get("items", []):
+        sev = str(item.get("severity") or "").upper()
+        if sev in severity_mix:
+            severity_mix[sev] += 1
+    for item in anomalies.get("items", []):
+        sev = str(item.get("severity") or "").upper()
+        if sev in severity_mix:
+            severity_mix[sev] += 1
+
+    return {
+        "region": region_name,
+        "window_min": window_min,
+        "summary": {
+            "fault_count": int(faults.get("count") or 0),
+            "anomaly_count": int(anomalies.get("count") or 0),
+            "complaint_count": int(complaints.get("count") or 0),
+            "station_count": int(stations.get("count") or 0),
+            "active_station_count": active_station_count,
+            "severity_mix": severity_mix,
+        },
+        "faults": faults.get("items", []),
+        "anomalies": anomalies.get("items", []),
+        "complaints": complaints.get("items", []),
+        "stations": station_items[:20],
+    }
+
+
 # def get_noc_overview_service(window_min: int = 15) -> dict[str, Any]:
 #     faults_sql = """
 #     SELECT
