@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 
 from jobs import job_generate_mock_data, job_run_anomaly_detection
 from services import (
+    get_alarm_detail_service,
+    get_alarm_summary_service,
     get_anomalies_atomic_service,
     get_anomalies_service,
     get_complaints_atomic_service,
@@ -417,18 +419,52 @@ def anomalies_endpoint(
 
 @app.get("/faults")
 def faults_endpoint(
+    fault_id: int | None = None,
     cell_id: str | None = None,
     region: str | None = None,
     severity: str | None = None,
     resolved: bool | None = None,
+    window_min: int | None = Query(default=None, ge=5, le=1440),
     limit: int = Query(default=50, ge=1, le=1000),
 ):
     try:
         return get_faults_service(
-            cell_id=cell_id, region=region, severity=severity, resolved=resolved, limit=limit
+            fault_id=fault_id,
+            cell_id=cell_id,
+            region=region,
+            severity=severity,
+            resolved=resolved,
+            window_min=window_min,
+            limit=limit,
         )
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/alarms/summary")
+def alarms_summary_endpoint(
+    window_min: int = Query(default=30, ge=5, le=1440),
+):
+    try:
+        return get_alarm_summary_service(window_min=window_min)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/alarms/detail/{fault_id}")
+def alarm_detail_endpoint(
+    fault_id: int,
+    context_window_min: int = Query(default=30, ge=5, le=1440),
+    context_limit: int = Query(default=6, ge=1, le=20),
+):
+    try:
+        return get_alarm_detail_service(
+            fault_id=fault_id,
+            context_window_min=context_window_min,
+            context_limit=context_limit,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.get("/complaints")

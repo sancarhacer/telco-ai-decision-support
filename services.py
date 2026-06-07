@@ -1296,15 +1296,20 @@ def get_anomalies_service(
 
 
 def get_faults_service(
+    fault_id: int | None = None,
     cell_id: str | None = None,
     region: str | None = None,
     severity: str | None = None,
     resolved: bool | None = None,
+    window_min: int | None = None,
     limit: int = 50,
     group_by_region: bool = False,
 ) -> dict[str, Any]:
     where = ["1=1"]
     params: list[Any] = []
+    if fault_id is not None:
+        where.append("f.id = %s")
+        params.append(fault_id)
     if cell_id:
         where.append("f.cell_id = %s")
         params.append(cell_id)
@@ -1317,6 +1322,9 @@ def get_faults_service(
     if resolved is not None:
         where.append("f.resolved = %s")
         params.append(resolved)
+    if window_min is not None:
+        where.append("f.created_at >= NOW() - make_interval(mins => %s)")
+        params.append(window_min)
 
     if group_by_region:
         sql = f"""
@@ -1334,7 +1342,14 @@ def get_faults_service(
         params.append(limit)
         rows = _serialize_rows(query_rows(sql, tuple(params)))
         return {
-            "filters": {"group_by": "region", "severity": severity, "resolved": resolved, "limit": limit},
+            "filters": {
+                "group_by": "region",
+                "fault_id": fault_id,
+                "severity": severity,
+                "resolved": resolved,
+                "window_min": window_min,
+                "limit": limit,
+            },
             "count": len(rows),
             "grouped": True,
             "items": rows,
@@ -1353,15 +1368,114 @@ def get_faults_service(
     rows = _serialize_rows(query_rows(sql, tuple(params)))
     return {
         "filters": {
+            "fault_id": fault_id,
             "cell_id": cell_id,
             "region": region,
             "severity": severity,
             "resolved": resolved,
+            "window_min": window_min,
             "limit": limit,
         },
         "count": len(rows),
         "grouped": False,
         "items": rows,
+    }
+
+
+def get_alarm_summary_service(window_min: int = 30) -> dict[str, Any]:
+    summary_row = query_rows(
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE resolved = FALSE) AS open_total,
+            COUNT(*) FILTER (WHERE resolved = FALSE AND severity = 'CRITICAL') AS open_critical,
+            COUNT(*) FILTER (WHERE resolved = FALSE AND severity = 'MAJOR') AS open_major,
+            COUNT(*) FILTER (WHERE created_at >= NOW() - make_interval(mins => %s)) AS new_alarm_count
+        FROM faults
+        """,
+        (window_min,),
+    )[0]
+
+    busiest_region_rows = query_rows(
+        """
+        SELECT bs.region, COUNT(*) AS alarm_count
+        FROM faults f
+        JOIN base_stations bs ON bs.cell_id = f.cell_id
+        WHERE f.resolved = FALSE
+          AND f.created_at >= NOW() - make_interval(mins => %s)
+        GROUP BY bs.region
+        ORDER BY alarm_count DESC, bs.region ASC
+        LIMIT 1
+        """,
+        (window_min,),
+    )
+    busiest_region = busiest_region_rows[0] if busiest_region_rows else None
+
+    latest_alarm_rows = query_rows(
+        """
+        SELECT MAX(created_at) AS latest_alarm_at
+        FROM faults
+        WHERE created_at >= NOW() - make_interval(mins => %s)
+        """,
+        (window_min,),
+    )
+    latest_alarm_at = latest_alarm_rows[0].get("latest_alarm_at") if latest_alarm_rows else None
+
+    return {
+        "window_min": window_min,
+        "open_total": int(summary_row.get("open_total") or 0),
+        "open_critical": int(summary_row.get("open_critical") or 0),
+        "open_major": int(summary_row.get("open_major") or 0),
+        "new_alarm_count": int(summary_row.get("new_alarm_count") or 0),
+        "busiest_region": busiest_region,
+        "last_updated_at": _serialize_value(latest_alarm_at),
+    }
+
+
+def get_alarm_detail_service(
+    fault_id: int,
+    context_window_min: int = 30,
+    context_limit: int = 6,
+) -> dict[str, Any]:
+    fault_payload = get_faults_service(fault_id=fault_id, limit=1)
+    items = fault_payload.get("items", [])
+    if not items:
+        raise RuntimeError("Alarm kaydi bulunamadi.")
+
+    alarm = items[0]
+    cell_id = alarm.get("cell_id")
+    region = alarm.get("region")
+
+    related_faults = get_faults_atomic_service(
+        cell_id=cell_id or "all",
+        resolved="all",
+        window_min=context_window_min,
+        limit=context_limit + 1,
+    ).get("items", [])
+    related_faults = [item for item in related_faults if item.get("id") != fault_id][:context_limit]
+
+    related_anomalies = get_anomalies_atomic_service(
+        cell_id=cell_id or "all",
+        window_min=context_window_min,
+        limit=context_limit,
+    ).get("items", [])
+
+    related_complaints = get_complaints_atomic_service(
+        cell_id=cell_id or "all",
+        region=region or "all",
+        window_min=context_window_min,
+        limit=context_limit,
+    ).get("items", [])
+
+    station_payload = get_stations_atomic_service(cell_id=cell_id or "all", limit=1)
+    station = station_payload.get("items", [None])[0]
+
+    return {
+        "alarm": alarm,
+        "context_window_min": context_window_min,
+        "related_faults": related_faults,
+        "related_anomalies": related_anomalies,
+        "related_complaints": related_complaints,
+        "station": station,
     }
 
 
