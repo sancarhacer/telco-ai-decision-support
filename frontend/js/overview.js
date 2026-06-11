@@ -45,7 +45,11 @@ function renderOverviewSummary(payload) {
     '[data-kpi="summary_status"]',
     payload.last_updated_at ? "Gercek veriden uretildi" : "Henuz veri akisi yok",
   );
+<<<<<<< HEAD
   setText('[data-kpi="overview_live_status"]', "Canlı");
+=======
+  setText('[data-kpi="overview_live_status"]', "Live");
+>>>>>>> c47e62281278f6873203c26014fa3e1fb02e2400
 }
 
 async function loadOverviewSummary() {
@@ -58,7 +62,11 @@ async function loadOverviewSummary() {
     renderOverviewSummary(payload);
   } catch (error) {
     setText('[data-kpi="summary_status"]', `Hata: ${error.message}`);
+<<<<<<< HEAD
     setText('[data-kpi="overview_live_status"]', "Uyarı");
+=======
+    setText('[data-kpi="overview_live_status"]', "Warning");
+>>>>>>> c47e62281278f6873203c26014fa3e1fb02e2400
   }
 }
 
