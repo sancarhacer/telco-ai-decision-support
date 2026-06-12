@@ -1,57 +1,51 @@
-<!doctype html>
-<html lang="en">
-
+﻿<!doctype html>
+<html lang="tr">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Telecom NOC Center - Cell Drilldown</title>
+  <title>Telecom NOC Merkezi - Hücre Detayı</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
-
 <body>
   <div id="siteHeader"></div>
-
   <main class="container py-4">
     <header class="page-hero row align-items-end g-4">
       <div class="col-lg-8">
-        <p class="eyebrow">Cell Drilldown</p>
-        <h1 class="page-title">Cell detail analysis</h1>
+        <p class="eyebrow">Hücre Detayı</p>
+        <h1 class="page-title">Hücre detay analizi</h1>
         <p class="page-description">
-          Inspect one cell's current station state, latest telemetry, anomaly context, and fault history.
+          Bir hücrenin mevcut istasyon durumunu, en son telemetriyi, anomali bağlamını ve hata geçmişini inceleyin.
         </p>
       </div>
       <div class="col-lg-4 d-flex justify-content-lg-end">
-        <div class="kpi-window-chip" id="cellLastUpdated">Waiting for data</div>
+        <div class="kpi-window-chip" id="cellLastUpdated">Veri bekleniyor</div>
       </div>
     </header>
-
     <section class="alarm-filter-panel overview-card mb-4">
       <div class="section-heading">
         <div>
-          <p class="section-eyebrow">Cell filters</p>
-          <h2 class="section-title">Select a cell and inspect live context</h2>
+          <p class="section-eyebrow">Hücre filtreleri</p>
+          <h2 class="section-title">Bir hücre seçin ve canlı bağlamı inceleyin</h2>
         </div>
-        <span class="section-meta" id="cellResultMeta">No query yet</span>
+        <span class="section-meta" id="cellResultMeta">Henüz sorgu yapılmadı</span>
       </div>
-
       <div class="row g-3 align-items-end">
         <div class="col-md-5 col-xl-3">
-          <label class="form-label text-secondary small mb-2" for="cellIdInput">Cell ID</label>
-          <input class="form-control alarm-input" id="cellIdInput" type="text" value="CELL_001"
-            placeholder="CELL_001" />
+          <label class="form-label text-secondary small mb-2" for="cellIdInput">Hücre ID</label>
+          <input class="form-control alarm-input" id="cellIdInput" type="text" value="CELL_001" placeholder="CELL_001" />
         </div>
         <div class="col-md-4 col-xl-2">
-          <label class="form-label text-secondary small mb-2" for="cellSliceSelect">Slice</label>
+          <label class="form-label text-secondary small mb-2" for="cellSliceSelect">Dilim</label>
           <select class="form-select alarm-select" id="cellSliceSelect">
-            <option value="">All slices</option>
+            <option value="">Tüm dilimler</option>
             <option value="eMBB">eMBB</option>
             <option value="URLLC">URLLC</option>
             <option value="mMTC">mMTC</option>
           </select>
         </div>
         <div class="col-md-3 col-xl-2">
-          <label class="form-label text-secondary small mb-2" for="cellLimitSelect">Rows</label>
+          <label class="form-label text-secondary small mb-2" for="cellLimitSelect">Satır</label>
           <select class="form-select alarm-select" id="cellLimitSelect">
             <option value="10">10</option>
             <option value="20" selected>20</option>
@@ -59,106 +53,98 @@
           </select>
         </div>
         <div class="col-xl-3">
-          <button class="hero-link cell-load-button" id="loadCellButton" type="button">Load cell</button>
+          <button class="hero-link cell-load-button" id="loadCellButton" type="button">Hücreyi yükle</button>
         </div>
       </div>
     </section>
-
     <section class="ops-strip mb-4">
       <div class="ops-strip-item">
-        <span class="ops-strip-label">Cell</span>
+        <span class="ops-strip-label">Hücre</span>
         <strong data-cell-summary="cell_id">--</strong>
       </div>
       <div class="ops-strip-item">
-        <span class="ops-strip-label">Region</span>
+        <span class="ops-strip-label">Bölge</span>
         <strong data-cell-summary="region">--</strong>
       </div>
       <div class="ops-strip-item">
-        <span class="ops-strip-label">Station status</span>
+        <span class="ops-strip-label">İstasyon durumu</span>
         <strong data-cell-summary="status">--</strong>
       </div>
       <div class="ops-strip-item">
-        <span class="ops-strip-label">Latest slice</span>
+        <span class="ops-strip-label">Son dilim</span>
         <strong data-cell-summary="slice_type">--</strong>
       </div>
     </section>
-
     <section class="row g-4 mb-4">
       <div class="col-md-6 col-xl-3">
         <article class="region-stat-card">
-          <span class="region-stat-label">Latency</span>
+          <span class="region-stat-label">Gecikme</span>
           <strong data-cell-kpi="latency_ms">--</strong>
-          <p class="cell-kpi-meta">Latest sample</p>
+          <p class="cell-kpi-meta">Son örnek</p>
         </article>
       </div>
       <div class="col-md-6 col-xl-3">
         <article class="region-stat-card">
-          <span class="region-stat-label">Packet loss</span>
+          <span class="region-stat-label">Paket kaybı</span>
           <strong data-cell-kpi="packet_loss_pct">--</strong>
-          <p class="cell-kpi-meta">Latest sample</p>
+          <p class="cell-kpi-meta">Son örnek</p>
         </article>
       </div>
       <div class="col-md-6 col-xl-3">
         <article class="region-stat-card">
-          <span class="region-stat-label">Throughput</span>
+          <span class="region-stat-label">İş hacmi</span>
           <strong data-cell-kpi="throughput_mbps">--</strong>
-          <p class="cell-kpi-meta">Latest sample</p>
+          <p class="cell-kpi-meta">Son örnek</p>
         </article>
       </div>
       <div class="col-md-6 col-xl-3">
         <article class="region-stat-card">
-          <span class="region-stat-label">Load</span>
+          <span class="region-stat-label">Yük</span>
           <strong data-cell-kpi="load_pct">--</strong>
-          <p class="cell-kpi-meta">Latest sample</p>
+          <p class="cell-kpi-meta">Son örnek</p>
         </article>
       </div>
     </section>
-
     <section class="row g-4 align-items-start">
       <div class="col-12 col-xl-7">
         <article class="overview-card h-100">
           <div class="section-heading">
             <div>
-              <p class="section-eyebrow">Telemetry</p>
-              <h2 class="section-title">Latest metric samples</h2>
+              <p class="section-eyebrow">Telemetri</p>
+              <h2 class="section-title">Son metrik örnekleri</h2>
             </div>
-            <span class="section-meta" id="metricListCount">0 samples</span>
+            <span class="section-meta" id="metricListCount">0 örnek</span>
           </div>
           <div class="cell-metric-list" id="cellMetricList"></div>
         </article>
       </div>
-
       <div class="col-12 col-xl-5">
         <article class="overview-card h-100 mb-4">
           <div class="section-heading">
             <div>
-              <p class="section-eyebrow">Anomalies</p>
-              <h2 class="section-title">Latest anomaly context</h2>
+              <p class="section-eyebrow">Anomaliler</p>
+              <h2 class="section-title">Son anomali bağlamı</h2>
             </div>
-            <span class="section-meta" id="anomalyListCount">0 anomalies</span>
+            <span class="section-meta" id="anomalyListCount">0 anomali</span>
           </div>
           <div class="alarm-context-list" id="cellAnomalyList"></div>
         </article>
-
         <article class="overview-card h-100">
           <div class="section-heading">
             <div>
-              <p class="section-eyebrow">Faults</p>
-              <h2 class="section-title">Recent fault history</h2>
+              <p class="section-eyebrow">Hatalar</p>
+              <h2 class="section-title">Son hata geçmişi</h2>
             </div>
-            <span class="section-meta" id="faultListCount">0 faults</span>
+            <span class="section-meta" id="faultListCount">0 hata</span>
           </div>
           <div class="alarm-context-list" id="cellFaultList"></div>
         </article>
       </div>
     </section>
   </main>
-
   <div id="siteFooter"></div>
-
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="./js/main.js"></script>
   <script src="./js/cell.js"></script>
 </body>
-
 </html>

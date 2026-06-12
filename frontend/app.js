@@ -570,15 +570,15 @@ function renderLlmResponse(payload) {
   const summaryCard = document.createElement("div");
   summaryCard.className = "summary";
   summaryCard.innerHTML = `
-    <div class="summary-title">Sonuc Ozeti</div>
-    <div class="summary-text">${payload.summary || "Sonuc olusturulamadi."}</div>
+    <div class="summary-title">Sonuç Özeti</div>
+    <div class="summary-text">${payload.summary || "Sonuç oluşturulamadı."}</div>
   `;
   container.appendChild(summaryCard);
 
   const rootCause = document.createElement("div");
   rootCause.className = "summary";
   rootCause.innerHTML = `
-    <div class="summary-title">Root Cause</div>
+    <div class="summary-title">Kök Neden</div>
     <div class="summary-text">${payload.root_cause || "Belirsiz"}</div>
   `;
   container.appendChild(rootCause);
@@ -587,33 +587,40 @@ function renderLlmResponse(payload) {
   const actionsCard = document.createElement("div");
   actionsCard.className = "summary";
   actionsCard.innerHTML = `
-    <div class="summary-title">Recommended Actions</div>
+    <div class="summary-title">Önerilen Aksiyonlar</div>
     <div class="summary-text">
-      ${actions.length ? actions.map((a) => `- ${a}`).join("<br>") : "Aksiyon bulunamadi."}
+      ${actions.length ? actions.map((a) => `• ${a}`).join("<br>") : "Aksiyon bulunamadı."}
     </div>
   `;
   container.appendChild(actionsCard);
 
   const confidenceVal = Number(payload.confidence ?? 0);
   const confidence = Number.isFinite(confidenceVal) ? confidenceVal : 0;
+  const confidenceScore = Math.max(0, Math.min(1, confidence)) * 100;
+
   const confidenceCard = document.createElement("div");
   confidenceCard.className = "summary";
+
+  // Confidence seviyesine göre renk
+  let confidenceColor = "#10b981"; // yeşil
+  if (confidenceScore < 50) {
+    confidenceColor = "#ef4444"; // kırmızı
+  } else if (confidenceScore < 75) {
+    confidenceColor = "#f59e0b"; // turuncu
+  }
+
   confidenceCard.innerHTML = `
-    <div class="summary-title">Confidence</div>
-    <div class="summary-text">${(Math.max(0, Math.min(1, confidence)) * 100).toFixed(0)}%</div>
+    <div class="summary-title">Güven Skoru</div>
+    <div class="summary-text">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="flex: 1; background: rgba(255,255,255,0.1); border-radius: 999px; height: 12px; overflow: hidden;">
+          <div style="background: ${confidenceColor}; height: 100%; width: ${confidenceScore}%; transition: width 0.5s ease;"></div>
+        </div>
+        <strong style="color: ${confidenceColor}; font-size: 1.2rem;">${confidenceScore.toFixed(0)}%</strong>
+      </div>
+    </div>
   `;
   container.appendChild(confidenceCard);
-
-  const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
-  if (evidence.length > 0) {
-    const evCard = document.createElement("div");
-    evCard.className = "summary";
-    evCard.innerHTML = `
-      <div class="summary-title">Evidence</div>
-      <div class="summary-text"><pre style="white-space: pre-wrap; margin: 0;">${JSON.stringify(evidence, null, 2)}</pre></div>
-    `;
-    container.appendChild(evCard);
-  }
 
   return container;
 }

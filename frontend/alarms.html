@@ -1,176 +1,159 @@
-<!doctype html>
-<html lang="en">
-
+﻿<!doctype html>
+<html lang="tr">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Telecom NOC Center - Alarms</title>
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-  />
+  <title>Telecom NOC Merkezi - Alarmlar</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
-
 <body>
   <div id="siteHeader"></div>
-
   <main class="container">
     <header class="page-hero">
       <div>
-        <p class="eyebrow">Alarms</p>
-        <h1 class="page-title">Alarm and incident management</h1>
+        <p class="eyebrow">Alarmlar</p>
+        <h1 class="page-title">Alarm ve Olay Yönetimi</h1>
         <p class="page-description">
-          Filter active network faults, prioritize operator actions, and inspect alarm context in one place.
+          Aktif ağ hatalarını filtreleyin, operatör eylemlerini önceliklendirin ve alarm bağlamını tek yerde inceleyin.
         </p>
       </div>
       <div class="hero-chip-row">
-        <span class="hero-chip">Live triage</span>
-        <span class="hero-chip">30 min operational window</span>
+        <span class="hero-chip">Canlı triyaj</span>
+        <span class="hero-chip">30 dk operasyon penceresi</span>
       </div>
     </header>
-
     <section class="summary-strip mb-4">
       <article class="summary-tile">
-        <span class="summary-label">Open alarms</span>
+        <span class="summary-label">Açık alarmlar</span>
         <strong class="summary-value" data-alarm-summary="open_total">--</strong>
       </article>
       <article class="summary-tile">
-        <span class="summary-label">Open critical</span>
+        <span class="summary-label">Açık kritik</span>
         <strong class="summary-value" data-alarm-summary="open_critical">--</strong>
       </article>
       <article class="summary-tile">
-        <span class="summary-label">Open major</span>
+        <span class="summary-label">Açık major</span>
         <strong class="summary-value" data-alarm-summary="open_major">--</strong>
       </article>
       <article class="summary-tile">
-        <span class="summary-label">New in window</span>
+        <span class="summary-label">Pencerede yeni</span>
         <strong class="summary-value" data-alarm-summary="new_alarm_count">--</strong>
       </article>
       <article class="summary-tile">
-        <span class="summary-label">Top region</span>
+        <span class="summary-label">En yoğun bölge</span>
         <strong class="summary-value" data-alarm-summary="busiest_region">--</strong>
       </article>
     </section>
-
     <section class="alarm-filter-panel overview-card mb-4">
       <div class="section-heading">
         <div>
-          <p class="section-eyebrow">Alarm filters</p>
-          <h2 class="section-title">Operational filtering and prioritization</h2>
+          <p class="section-eyebrow">Alarm filtreleri</p>
+          <h2 class="section-title">Operasyonel filtreleme ve önceliklendirme</h2>
         </div>
-        <span class="section-meta" id="alarmLastUpdated">Last update --</span>
+        <span class="section-meta" id="alarmLastUpdated">Son güncelleme --</span>
       </div>
-
       <div class="row g-3">
         <div class="col-md-6 col-xl-2">
-          <label class="form-label text-secondary small mb-2" for="alarmWindow">Window</label>
+          <label class="form-label text-secondary small mb-2" for="alarmWindow">Pencere</label>
           <select class="form-select alarm-select" id="alarmWindow">
-            <option value="15">Last 15 min</option>
-            <option value="30" selected>Last 30 min</option>
-            <option value="60">Last 60 min</option>
-            <option value="120">Last 120 min</option>
+            <option value="15">Son 15 dk</option>
+            <option value="30" selected>Son 30 dk</option>
+            <option value="60">Son 60 dk</option>
+            <option value="120">Son 120 dk</option>
           </select>
         </div>
         <div class="col-md-6 col-xl-2">
-          <label class="form-label text-secondary small mb-2" for="alarmSeverity">Severity</label>
+          <label class="form-label text-secondary small mb-2" for="alarmSeverity">Önem Derecesi</label>
           <select class="form-select alarm-select" id="alarmSeverity">
-            <option value="">All severities</option>
-            <option value="CRITICAL">Critical</option>
+            <option value="">Tümü</option>
+            <option value="CRITICAL">Kritik</option>
             <option value="MAJOR">Major</option>
             <option value="MINOR">Minor</option>
-            <option value="WARNING">Warning</option>
+            <option value="WARNING">Uyarı</option>
           </select>
         </div>
         <div class="col-md-6 col-xl-2">
-          <label class="form-label text-secondary small mb-2" for="alarmStatus">Status</label>
+          <label class="form-label text-secondary small mb-2" for="alarmStatus">Durum</label>
           <select class="form-select alarm-select" id="alarmStatus">
-            <option value="">All statuses</option>
-            <option value="open" selected>Open only</option>
-            <option value="resolved">Resolved only</option>
+            <option value="">Tüm durumlar</option>
+            <option value="open" selected>Sadece açık</option>
+            <option value="resolved">Sadece çözümlenmiş</option>
           </select>
         </div>
         <div class="col-md-6 col-xl-3">
-          <label class="form-label text-secondary small mb-2" for="alarmRegion">Region</label>
-          <input class="form-control alarm-input" id="alarmRegion" type="text" placeholder="e.g. Buca" />
+          <label class="form-label text-secondary small mb-2" for="alarmRegion">Bölge</label>
+          <input class="form-control alarm-input" id="alarmRegion" type="text" placeholder="ör. Buca" />
         </div>
         <div class="col-md-6 col-xl-3">
-          <label class="form-label text-secondary small mb-2" for="alarmCell">Cell ID</label>
-          <input class="form-control alarm-input" id="alarmCell" type="text" placeholder="e.g. CELL_017" />
+          <label class="form-label text-secondary small mb-2" for="alarmCell">Hücre ID</label>
+          <input class="form-control alarm-input" id="alarmCell" type="text" placeholder="ör. CELL_017" />
         </div>
       </div>
     </section>
-
     <section class="row g-4 align-items-start">
       <div class="col-12 col-xl-7">
         <article class="overview-card h-100">
           <div class="section-heading">
             <div>
-              <p class="section-eyebrow">Alarm queue</p>
-              <h2 class="section-title">Prioritized live fault list</h2>
+              <p class="section-eyebrow">Alarm kuyruğu</p>
+              <h2 class="section-title">Önceliklendirilmiş canlı hata listesi</h2>
             </div>
-            <span class="section-meta" id="alarmListCount">0 alarms</span>
+            <span class="section-meta" id="alarmListCount">0 alarm</span>
           </div>
           <div id="alarmList" class="alarm-list"></div>
         </article>
       </div>
-
       <div class="col-12 col-xl-5">
         <article class="overview-card h-100">
           <div class="section-heading">
             <div>
-              <p class="section-eyebrow">Alarm detail</p>
-              <h2 class="section-title" id="selectedAlarmTitle">Select an alarm</h2>
+              <p class="section-eyebrow">Alarm detayı</p>
+              <h2 class="section-title" id="selectedAlarmTitle">Bir alarm seçin</h2>
             </div>
-            <span class="section-meta" id="selectedAlarmMeta">Awaiting selection</span>
+            <span class="section-meta" id="selectedAlarmMeta">Seçim bekleniyor</span>
           </div>
-
           <div class="alarm-detail-grid mb-4">
             <div class="region-stat-card">
-              <span class="region-stat-label">Cell</span>
+              <span class="region-stat-label">Hücre</span>
               <strong class="region-stat-value" data-alarm-detail="cell_id">--</strong>
             </div>
             <div class="region-stat-card">
-              <span class="region-stat-label">Region</span>
+              <span class="region-stat-label">Bölge</span>
               <strong class="region-stat-value" data-alarm-detail="region">--</strong>
             </div>
             <div class="region-stat-card">
-              <span class="region-stat-label">Severity</span>
+              <span class="region-stat-label">Önem</span>
               <strong class="region-stat-value" data-alarm-detail="severity">--</strong>
             </div>
             <div class="region-stat-card">
-              <span class="region-stat-label">Status</span>
+              <span class="region-stat-label">Durum</span>
               <strong class="region-stat-value" data-alarm-detail="status">--</strong>
             </div>
           </div>
-
           <div class="alarm-context-block mb-4">
-            <p class="alarm-context-label">Fault message</p>
-            <div class="alarm-context-message" id="selectedAlarmMessage">Choose an alarm to inspect its message and context.</div>
+            <p class="alarm-context-label">Hata mesajı</p>
+            <div class="alarm-context-message" id="selectedAlarmMessage">Mesaj ve bağlamını incelemek için bir alarm seçin.</div>
           </div>
-
           <div class="alarm-context-block mb-4">
-            <p class="alarm-context-label">Station context</p>
-            <div id="selectedAlarmStation" class="alarm-context-message">No station context loaded yet.</div>
+            <p class="alarm-context-label">İstasyon bağlamı</p>
+            <div id="selectedAlarmStation" class="alarm-context-message">Henüz istasyon bağlamı yüklenmedi.</div>
           </div>
-
           <div class="alarm-subsection">
             <div class="section-heading compact-heading">
-              <h3 class="compact-title">Related faults</h3>
+              <h3 class="compact-title">İlgili hatalar</h3>
             </div>
             <div id="relatedFaultsList" class="alarm-context-list"></div>
           </div>
-
           <div class="alarm-subsection">
             <div class="section-heading compact-heading">
-              <h3 class="compact-title">Related anomalies</h3>
+              <h3 class="compact-title">İlgili anomaliler</h3>
             </div>
             <div id="relatedAnomaliesList" class="alarm-context-list"></div>
           </div>
-
           <div class="alarm-subsection">
             <div class="section-heading compact-heading">
-              <h3 class="compact-title">Related complaints</h3>
+              <h3 class="compact-title">İlgili şikayetler</h3>
             </div>
             <div id="relatedComplaintsList" class="alarm-context-list"></div>
           </div>
@@ -178,12 +161,9 @@
       </div>
     </section>
   </main>
-
   <div id="siteFooter"></div>
-
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="./js/main.js"></script>
   <script src="./js/alarms.js"></script>
 </body>
-
 </html>
