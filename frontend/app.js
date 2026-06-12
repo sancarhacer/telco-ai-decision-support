@@ -567,32 +567,86 @@ function renderResponse(data, route, metricType = null) {
 function renderLlmResponse(payload) {
   const container = document.createElement("div");
 
+  // Summary'i formatla - metrikleri düzenli göster
+  let summaryText = payload.summary || "Sonuç oluşturulamadı.";
+
+  // Metrik desenleri bul ve liste formatına çevir
+  // Sadece büyük harfle başlayan ve ardından sayı gelen metrikleri yakala
+  const metricPattern = /([A-Z][a-zA-Z_]*)\s+([-\d.]+)/g;
+  const metrics = [];
+  let match;
+
+  while ((match = metricPattern.exec(summaryText)) !== null) {
+    const name = match[1].replace(/_/g, ' ');
+    const value = parseFloat(match[2]);
+    // Sadece geçerli sayıları kabul et
+    if (!isNaN(value)) {
+      metrics.push({ name, value: match[2] });
+    }
+  }
+
+  // Eğer 3'ten fazla metrik varsa, liste formatına çevir
+  if (metrics.length >= 3) {
+    // İlk cümleyi al (: veya . ile bitene kadar)
+    const firstPart = summaryText.split(/[:.]/)[0];
+    summaryText = firstPart + '.';
+    summaryText += '<div style="margin-top: 12px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">';
+    metrics.forEach(m => {
+      summaryText += `<div style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 6px; font-size: 0.9rem;">
+        <div style="color: rgba(255,255,255,0.7); font-size: 0.8rem;">${m.name}</div>
+        <div style="font-weight: 600; margin-top: 2px;">${m.value}</div>
+      </div>`;
+    });
+    summaryText += '</div>';
+  }
+
   const summaryCard = document.createElement("div");
   summaryCard.className = "summary";
   summaryCard.innerHTML = `
     <div class="summary-title">Sonuç Özeti</div>
-    <div class="summary-text">${payload.summary || "Sonuç oluşturulamadı."}</div>
+    <div class="summary-text">${summaryText}</div>
   `;
   container.appendChild(summaryCard);
 
   const rootCause = document.createElement("div");
   rootCause.className = "summary";
-  rootCause.innerHTML = `
-    <div class="summary-title">Kök Neden</div>
-    <div class="summary-text">${payload.root_cause || "Belirsiz"}</div>
-  `;
-  container.appendChild(rootCause);
+
+  // Kök neden anlamlıysa göster
+  const rootCauseText = payload.root_cause || "Belirsiz";
+  const hasValidRootCause = rootCauseText &&
+    rootCauseText !== "Belirsiz" &&
+    rootCauseText !== "N/A" &&
+    rootCauseText !== "Yanıt formatı uygun değil";
+
+  if (hasValidRootCause) {
+    rootCause.innerHTML = `
+      <div class="summary-title">Kök Neden</div>
+      <div class="summary-text">${rootCauseText}</div>
+    `;
+    container.appendChild(rootCause);
+  }
 
   const actions = Array.isArray(payload.recommended_actions) ? payload.recommended_actions : [];
-  const actionsCard = document.createElement("div");
-  actionsCard.className = "summary";
-  actionsCard.innerHTML = `
-    <div class="summary-title">Önerilen Aksiyonlar</div>
-    <div class="summary-text">
-      ${actions.length ? actions.map((a) => `• ${a}`).join("<br>") : "Aksiyon bulunamadı."}
-    </div>
-  `;
-  container.appendChild(actionsCard);
+
+  // Anlamlı aksiyonları filtrele
+  const validActions = actions.filter(a =>
+    a &&
+    a !== "N/A" &&
+    !a.includes("Farklı bir şekilde sormayı deneyin") &&
+    !a.includes("manuel inceleme")
+  );
+
+  if (validActions.length > 0) {
+    const actionsCard = document.createElement("div");
+    actionsCard.className = "summary";
+    actionsCard.innerHTML = `
+      <div class="summary-title">Önerilen Aksiyonlar</div>
+      <div class="summary-text">
+        ${validActions.map((a) => `• ${a}`).join("<br>")}
+      </div>
+    `;
+    container.appendChild(actionsCard);
+  }
 
   const confidenceVal = Number(payload.confidence ?? 0);
   const confidence = Number.isFinite(confidenceVal) ? confidenceVal : 0;
