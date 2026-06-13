@@ -1,12 +1,19 @@
 import json
 import logging
 import os
+import re
+import sys
 from contextlib import asynccontextmanager
+from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
+import anyio
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
 from openai import OpenAI
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -15,20 +22,15 @@ from jobs import job_generate_mock_data, job_run_anomaly_detection
 from services import (
     get_alarm_detail_service,
     get_alarm_summary_service,
-    get_anomalies_atomic_service,
     get_anomalies_service,
-    get_complaints_atomic_service,
     get_complaints_service,
-    get_faults_atomic_service,
     get_faults_service,
     get_homepage_summary_service,
-    get_metrics_atomic_service,
     get_metrics_service,
     get_recent_event_stream_service,
     get_region_detail_service,
     get_region_risk_ranking_service,
     get_station_service,
-    get_stations_atomic_service,
 )
 
 log = logging.getLogger(__name__)
@@ -37,6 +39,10 @@ scheduler = BackgroundScheduler(timezone="Europe/Istanbul")
 load_dotenv()
 
 LLM_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+REPO_ROOT = Path(__file__).resolve().parent
+MCP_SERVER_COMMAND = str(REPO_ROOT / ".venv" / "Scripts" / "python.exe")
+if not Path(MCP_SERVER_COMMAND).exists():
+    MCP_SERVER_COMMAND = sys.executable
 
 
 @asynccontextmanager
@@ -409,6 +415,229 @@ def _run_llm_tool_loop(user_message: str, limit: int) -> dict[str, Any]:
         ],
         "confidence": 0.2,
     }
+def _mcp_server_params() -> StdioServerParameters:
+    return StdioServerParameters(
+        command=MCP_SERVER_COMMAND,
+        args=["main.py"],
+        cwd=REPO_ROOT,
+        encoding="utf-8",
+        encoding_error_handler="replace",
+    )
+
+
+def _tool_to_openai_schema(tool: Any) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description or f"MCP tool: {tool.name}",
+            "parameters": tool.inputSchema or {"type": "object", "properties": {}},
+        },
+    }
+
+
+def _coerce_mcp_tool_args(args: dict[str, Any], default_limit: int) -> dict[str, Any]:
+    def _to_int(value: Any, fallback: int) -> int:
+        try:
+            return fallback if value is None else int(value)
+        except Exception:
+            return fallback
+
+    def _to_bool(value: Any, fallback: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in ("true", "1", "yes"):
+                return True
+            if lowered in ("false", "0", "no"):
+                return False
+        return fallback
+
+    normalized = dict(args)
+    if "window_min" in normalized:
+        normalized["window_min"] = _to_int(normalized.get("window_min"), 60)
+    if "limit" in normalized:
+        normalized["limit"] = _to_int(normalized.get("limit"), default_limit)
+    else:
+        normalized["limit"] = default_limit
+    if "only_anomalies" in normalized:
+        normalized["only_anomalies"] = _to_bool(
+            normalized.get("only_anomalies"), True
+        )
+    return normalized
+
+
+def _normalize_mcp_tool_result(result: Any) -> dict[str, Any]:
+    structured = getattr(result, "structuredContent", None)
+    if isinstance(structured, dict):
+        return structured
+    if structured is not None:
+        return {"result": structured}
+
+    content_items = []
+    for item in getattr(result, "content", []) or []:
+        text = getattr(item, "text", None)
+        if text is None:
+            content_items.append(item.model_dump(mode="json"))
+            continue
+        try:
+            content_items.append(json.loads(text))
+        except json.JSONDecodeError:
+            content_items.append(text)
+
+    if len(content_items) == 1 and isinstance(content_items[0], dict):
+        return content_items[0]
+
+    return {
+        "content": content_items,
+        "is_error": bool(getattr(result, "isError", False)),
+    }
+
+
+def _parse_llm_json_output(raw: str) -> dict[str, Any]:
+    parsed = None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    if not parsed:
+        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+        if not json_match:
+            json_match = re.search(r'(\{[^{}]*"summary"[^{}]*\})', raw, re.DOTALL)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+    if parsed:
+        return parsed
+
+    summary_match = re.search(r'"summary":\s*"([^"]+)"', raw)
+    confidence_match = re.search(r'"confidence":\s*([\d.]+)', raw)
+    return {
+        "summary": (
+            summary_match.group(1) if summary_match else "Sonuç oluşturulamadı."
+        ),
+        "evidence": [],
+        "root_cause": "N/A",
+        "recommended_actions": [],
+        "confidence": float(confidence_match.group(1)) if confidence_match else 0.5,
+    }
+
+
+async def _fetch_mcp_tool_schemas() -> list[dict[str, Any]]:
+    async with stdio_client(_mcp_server_params()) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            return [_tool_to_openai_schema(tool) for tool in tools.tools]
+
+
+async def _run_llm_tool_loop_via_mcp(user_message: str, limit: int) -> dict[str, Any]:
+    client = _get_llm_client()
+    tool_schemas = await _fetch_mcp_tool_schemas()
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "system",
+            "content": (
+                "Sen bir telecom ağ operasyon merkezi asistanısın. Türkçe konuş.\n"
+                "Tool listesi MCP server'dan canlı geliyor; daima uygun MCP tool'unu kullan.\n"
+                "Asla tahmin yapma, yanıtını tool sonucuna göre oluştur.\n\n"
+                "TOOL SEÇİM KURALLARI:\n"
+                "- 'anomali' kelimesi -> get_anomalies({region, only_anomalies: true})\n"
+                "- 'hata/fault/arıza' kelimesi -> get_faults({region, resolved: 'false'})\n"
+                "- 'şikayet' kelimesi -> get_complaints({region})\n"
+                "- 'metrik/performans' kelimesi -> get_metrics({cell_id veya region})\n"
+                "- 'cell/istasyon' bilgisi -> get_stations({cell_id veya region})\n\n"
+                "PARAMETRE KURALLARI:\n"
+                "- region: bölge adı string olarak (örn: 'Karşıyaka', 'Konak')\n"
+                "- cell_id: cell string olarak (örn: 'CELL_017')\n"
+                "- window_min: sadece sayı (örn: 30, 60, 120)\n"
+                "- limit: sadece sayı (örn: 10, 20)\n"
+                "- resolved: sadece 'true' veya 'false' string olarak\n"
+                "- only_anomalies: sadece true veya false\n\n"
+                "Yanıtın sadece şu JSON olsun:\n"
+                "{\n"
+                '  "summary": "Detaylı bulgu açıklaması burada",\n'
+                '  "evidence": [],\n'
+                '  "root_cause": "N/A",\n'
+                '  "recommended_actions": [],\n'
+                '  "confidence": 0.8\n'
+                "}\n"
+                "JSON dışında hiçbir şey yazma."
+            ),
+        },
+        {"role": "user", "content": user_message},
+    ]
+
+    async with stdio_client(_mcp_server_params()) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+
+            for _ in range(5):
+                resp = client.chat.completions.create(
+                    model=LLM_MODEL,
+                    messages=messages,
+                    tools=tool_schemas,
+                    tool_choice="auto",
+                    temperature=0.1,
+                )
+                msg = resp.choices[0].message
+                tool_calls = msg.tool_calls or []
+                if not tool_calls:
+                    return _parse_llm_json_output(msg.content or "{}")
+
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.content or "",
+                        "tool_calls": [tc.model_dump() for tc in tool_calls],
+                    }
+                )
+
+                for tc in tool_calls:
+                    try:
+                        args = json.loads(tc.function.arguments or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+
+                    normalized_args = _coerce_mcp_tool_args(args, default_limit=limit)
+                    tool_result = await session.call_tool(
+                        tc.function.name,
+                        normalized_args,
+                        read_timeout_seconds=timedelta(seconds=30),
+                    )
+                    parsed_result = _normalize_mcp_tool_result(tool_result)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps(parsed_result, ensure_ascii=False),
+                        }
+                    )
+                    log.info(
+                        "MCP tool called: %s args=%s",
+                        tc.function.name,
+                        normalized_args,
+                    )
+
+    return {
+        "summary": "Sorgunuz için yeterli bilgi bulunamadı veya sorgu çok karmaşıktı.",
+        "evidence": [],
+        "root_cause": "Veri yetersiz",
+        "recommended_actions": [
+            "Daha spesifik bir soru sorun (örn: 'CELL_010 için hata var mı?')",
+            "Belirli bir bölge veya zaman aralığı belirtin",
+        ],
+        "confidence": 0.2,
+    }
+
+
+def _run_llm_tool_loop(user_message: str, limit: int) -> dict[str, Any]:
+    return anyio.run(_run_llm_tool_loop_via_mcp, user_message, limit)
 
 
 def _normalize_chat_output(raw: dict[str, Any]) -> ChatResponse:
@@ -623,6 +852,14 @@ def stations_endpoint(
         )
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/chat/tools")
+def chat_tools_endpoint():
+    try:
+        return {"tools": anyio.run(_fetch_mcp_tool_schemas)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"MCP tool listesi alinamadi: {e}")
 
 
 @app.post("/chat", response_model=ChatResponse)
