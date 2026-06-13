@@ -23,10 +23,16 @@ function setText(selector, value) {
 }
 
 function renderOverviewSummary(payload) {
-  setText('[data-kpi="critical_open_faults"]', String(payload.critical_open_faults ?? 0));
+  setText(
+    '[data-kpi="critical_open_faults"]',
+    String(payload.critical_open_faults ?? 0),
+  );
   setText('[data-kpi="anomaly_count"]', String(payload.anomaly_count ?? 0));
   setText('[data-kpi="complaint_count"]', String(payload.complaint_count ?? 0));
-  setText('[data-kpi="affected_region_count"]', String(payload.affected_region_count ?? 0));
+  setText(
+    '[data-kpi="affected_region_count"]',
+    String(payload.affected_region_count ?? 0),
+  );
 
   const riskiestRegion = payload.riskiest_region;
   setText(
@@ -40,21 +46,24 @@ function renderOverviewSummary(payload) {
       : "Risk skoru uretilemedi",
   );
 
-  setText('[data-kpi="last_updated_at"]', formatDateTime(payload.last_updated_at));
+  setText(
+    '[data-kpi="last_updated_at"]',
+    formatDateTime(payload.last_updated_at),
+  );
   setText(
     '[data-kpi="summary_status"]',
-    payload.last_updated_at ? "Gercek veriden uretildi" : "Henuz veri akisi yok",
+    payload.last_updated_at
+      ? "Gercek veriden uretildi"
+      : "Henuz veri akisi yok",
   );
-<<<<<<< HEAD
   setText('[data-kpi="overview_live_status"]', "Canlı");
-=======
-  setText('[data-kpi="overview_live_status"]', "Live");
->>>>>>> c47e62281278f6873203c26014fa3e1fb02e2400
 }
 
 async function loadOverviewSummary() {
   try {
-    const response = await fetch(`${OVERVIEW_API_BASE}/overview/summary?window_min=${OVERVIEW_WINDOW_MIN}`);
+    const response = await fetch(
+      `${OVERVIEW_API_BASE}/overview/summary?window_min=${OVERVIEW_WINDOW_MIN}`,
+    );
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.detail || "Özet verisi alınamadı");
@@ -62,11 +71,7 @@ async function loadOverviewSummary() {
     renderOverviewSummary(payload);
   } catch (error) {
     setText('[data-kpi="summary_status"]', `Hata: ${error.message}`);
-<<<<<<< HEAD
     setText('[data-kpi="overview_live_status"]', "Uyarı");
-=======
-    setText('[data-kpi="overview_live_status"]', "Warning");
->>>>>>> c47e62281278f6873203c26014fa3e1fb02e2400
   }
 }
 
@@ -75,7 +80,8 @@ function renderCriticalFaults(items) {
   if (!container) return;
 
   if (!Array.isArray(items) || items.length === 0) {
-    container.innerHTML = '<div class="critical-list-empty">Açık kritik fault bulunamadı.</div>';
+    container.innerHTML =
+      '<div class="critical-list-empty">Açık kritik fault bulunamadı.</div>';
     return;
   }
 
@@ -99,7 +105,9 @@ function renderCriticalFaults(items) {
 
 async function loadCriticalFaults() {
   try {
-    const response = await fetch(`${OVERVIEW_API_BASE}/faults?severity=CRITICAL&resolved=false&limit=5`);
+    const response = await fetch(
+      `${OVERVIEW_API_BASE}/faults?severity=CRITICAL&resolved=false&limit=5`,
+    );
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.detail || "Kritik fault verisi alinamadi");
@@ -118,7 +126,8 @@ function renderRiskRegions(items) {
   if (!container) return;
 
   if (!Array.isArray(items) || items.length === 0) {
-    container.innerHTML = '<div class="critical-list-empty">Riskli bölge bulunamadı.</div>';
+    container.innerHTML =
+      '<div class="critical-list-empty">Riskli bölge bulunamadı.</div>';
     return;
   }
 
@@ -146,7 +155,9 @@ function renderRiskRegions(items) {
 
 async function loadRiskRegions() {
   try {
-    const response = await fetch(`${OVERVIEW_API_BASE}/overview/regions?window_min=${OVERVIEW_WINDOW_MIN}&top_n=5`);
+    const response = await fetch(
+      `${OVERVIEW_API_BASE}/overview/regions?window_min=${OVERVIEW_WINDOW_MIN}&top_n=5`,
+    );
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.detail || "Bolge riski alinamadi");
@@ -171,7 +182,8 @@ function renderEventStream(items) {
   if (!container) return;
 
   if (!Array.isArray(items) || items.length === 0) {
-    container.innerHTML = '<div class="critical-list-empty">Son olay bulunamadı.</div>';
+    container.innerHTML =
+      '<div class="critical-list-empty">Son olay bulunamadı.</div>';
     return;
   }
 
@@ -197,7 +209,9 @@ function renderEventStream(items) {
 
 async function loadEventStream() {
   try {
-    const response = await fetch(`${OVERVIEW_API_BASE}/overview/events?window_min=${OVERVIEW_WINDOW_MIN}&limit=12`);
+    const response = await fetch(
+      `${OVERVIEW_API_BASE}/overview/events?window_min=${OVERVIEW_WINDOW_MIN}&limit=12`,
+    );
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.detail || "Olay akisi alinamadi");

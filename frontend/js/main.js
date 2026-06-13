@@ -19,16 +19,6 @@ function markActiveNav() {
       link.classList.add("active");
     }
   });
-<<<<<<< HEAD
-
-  // Ana sayfadaysa geri butonunu gizle
-  if (currentPage === "index.html" || currentPage === "") {
-    document.querySelectorAll(".back-button").forEach((btn) => {
-      btn.style.display = "none";
-    });
-  }
-=======
->>>>>>> c47e62281278f6873203c26014fa3e1fb02e2400
 }
 
 async function bootstrapLayout() {
